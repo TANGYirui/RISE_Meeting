@@ -1,4 +1,5 @@
 # RISE: Retrieving Interaction SpacE for Agentic Search
+<a href="https://arxiv.org/abs/2606.06880"><img src="https://img.shields.io/badge/Paper-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white" alt="Paper"></a>
 ![RISE workflow](docs/rise_overview.png)
 RISE treats retrieval as the constructor of a bounded **interaction space**: a
 per-query workspace of files the agent explores with shell tools, rather than a
@@ -158,6 +159,7 @@ on `gpt-5.4-nano`.
 @article{rise2026,
   title  = {Towards Retrieving Interaction Spaces for Agentic Search},
   author = {Zhuang, Shengyao and Ni, Yuansheng and Fun, Hengxin and Lin, Jimmy and Ma, Xueguang},
-  year   = {2026}
+  year   = {2026},
+  journal= {arXiv preprint arXiv:2606.06880}
 }
 ```
