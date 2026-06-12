@@ -33,6 +33,7 @@ from rise.dci_artifacts import PRICE_TABLE, estimate_cost
 from rise.decompose import make_client, resolve_model
 from rise.retrieval import load_index
 from rise.rise_agent import run_rise_agent
+from rise.run_storage import default_result_root, query_workspace
 from rise.protocol import for_rise
 from rise.trajectory import (
     PLACEHOLDER_JUDGE_OUT, PLACEHOLDER_JUDGE_USAGE,
@@ -73,6 +74,13 @@ def main() -> None:
                          "(100/100 natural commit).")
     ap.add_argument("--concurrency", type=int, default=10)
     ap.add_argument("--out-root", type=Path, default=None)
+    ap.add_argument(
+        "--keep-workspace",
+        action="store_true",
+        help="Preserve each query's bounded workspace under OUT_ROOT/_working. "
+             "By default workspaces use the system temporary directory and "
+             "are deleted after each query.",
+    )
     # ---- passage mode --------------------------------------------
     ap.add_argument("--passage-mode", action="store_true",
                     help="Switch retrieval and read to passage-level units. "
@@ -111,12 +119,17 @@ def main() -> None:
         tag = args.model.replace("deepseek-", "")
         if args.passage_mode:
             idx_tag = args.passage_index_dir.name
-            args.out_root = REPO_ROOT / "runs" / f"rise_{tag}_t{args.max_turns}_k{args.bm25_k}_{idx_tag}"
+            args.out_root = default_result_root(
+                REPO_ROOT, f"rise_{tag}_t{args.max_turns}_k{args.bm25_k}_{idx_tag}"
+            )
         else:
             idx_tag = args.index_dir.name
             struct_tag = "_structured" if args.structured_docs else ""
             nobash_tag = "_nobash" if args.no_bash else ""
-            args.out_root = REPO_ROOT / "runs" / f"rise_{tag}_t{args.max_turns}_k{args.bm25_k}_{idx_tag}{struct_tag}{nobash_tag}"
+            args.out_root = default_result_root(
+                REPO_ROOT,
+                f"rise_{tag}_t{args.max_turns}_k{args.bm25_k}_{idx_tag}{struct_tag}{nobash_tag}",
+            )
     args.out_root = args.out_root.resolve()
     args.out_root.mkdir(parents=True, exist_ok=True)
     reasoning_effort = effective_reasoning_effort()
@@ -147,10 +160,8 @@ def main() -> None:
     run_config_hash = compute_run_config_hash(run_config.to_hashable_dict())
     print(f"run_config_hash: {run_config_hash}")
 
-    working_root = (args.out_root / "_working").resolve()
     trace_root = (args.out_root / "_traces").resolve()
     per_query_dir = (args.out_root / "_per_query").resolve()
-    working_root.mkdir(parents=True, exist_ok=True)
     trace_root.mkdir(parents=True, exist_ok=True)
     per_query_dir.mkdir(parents=True, exist_ok=True)
 
@@ -201,6 +212,7 @@ def main() -> None:
         print(f"  passage_files_root={args.passage_files_root}")
         print(f"  parent_docs_root (read_doc fallback)={args.bc_plus_docs}")
     print(f"  out_root={args.out_root}")
+    print(f"  workspace={'preserved under out_root/_working' if args.keep_workspace else 'temporary; deleted after each query'}")
     print()
 
     # Route credentials by model: gpt-5*/o-series → OpenAI direct,
@@ -234,23 +246,23 @@ def main() -> None:
                 if ok:
                     return cached
                 print(f"qid={qid} cache invalid ({reason}); re-running", flush=True)
-        working_dir = working_root / f"qid{qid}"
         trace_path = trace_root / f"qid_{qid}" / "single.json"
-        run = run_rise_agent(
-            question=rec["query"], query_id=qid,
-            run_config=run_config,
-            searcher=retriever, doc_ids=doc_ids,
-            docid_to_relpath=docid_to_relpath,
-            bc_plus_docs_root=search_root,
-            working_dir=working_dir,
-            client=agent_client,
-            trace_path=trace_path,
-            map_keys=map_keys,
-            enable_sandbox=(not args.no_sandbox),
-            parent_docs_root=bc_plus_docs_root if args.passage_mode else None,
-            relpath_to_parent_docid=relpath_to_parent_docid if args.passage_mode else None,
-            related_doc_ids_fn=related_fn,
-        )
+        with query_workspace(args.out_root, qid, keep=args.keep_workspace) as working_dir:
+            run = run_rise_agent(
+                question=rec["query"], query_id=qid,
+                run_config=run_config,
+                searcher=retriever, doc_ids=doc_ids,
+                docid_to_relpath=docid_to_relpath,
+                bc_plus_docs_root=search_root,
+                working_dir=working_dir,
+                client=agent_client,
+                trace_path=trace_path,
+                map_keys=map_keys,
+                enable_sandbox=(not args.no_sandbox),
+                parent_docs_root=bc_plus_docs_root if args.passage_mode else None,
+                relpath_to_parent_docid=relpath_to_parent_docid if args.passage_mode else None,
+                related_doc_ids_fn=related_fn,
+            )
 
         # Cost: agent only. Judge is decoupled — `scripts/judge.py` reads
         # this row's `final_text` + `gold_answer` later and atomically

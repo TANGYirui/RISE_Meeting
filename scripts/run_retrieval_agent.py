@@ -44,6 +44,7 @@ from rise.decompose import make_client
 from rise.dci_artifacts import PRICE_TABLE, estimate_cost
 from rise.protocol import for_bcp_retrieval
 from rise.retrieval import load_index
+from rise.run_storage import default_result_root
 from rise.trajectory import (
     PLACEHOLDER_JUDGE_OUT, PLACEHOLDER_JUDGE_USAGE,
     SCHEMA_VERSION, atomic_write_json, build_per_query_row,
@@ -82,7 +83,10 @@ def main() -> None:
         # Encode corpus identity (index dir name) in the default path so 100k and
         # 1M runs land in different output dirs by default.
         idx_tag = args.index_dir.name
-        args.out = REPO_ROOT / "runs" / f"bcp_retrieval_agent_mini_dev_{agent_tag}_k{args.per_search_k}_{gd_tag}_mi{args.max_iterations}_{idx_tag}.json"
+        args.out = default_result_root(
+            REPO_ROOT,
+            f"bcp_retrieval_agent_mini_dev_{agent_tag}_k{args.per_search_k}_{gd_tag}_mi{args.max_iterations}_{idx_tag}.json",
+        )
 
     run_root = args.out.with_suffix("")
     per_query_dir = run_root / "_per_query"

@@ -33,6 +33,7 @@ from rise.dci_artifacts import PRICE_TABLE, estimate_cost
 from rise.dci_native import run_dci_native
 from rise.decompose import make_client
 from rise.protocol import for_dci_native
+from rise.run_storage import default_result_root
 from rise.trajectory import (
     PLACEHOLDER_JUDGE_OUT,
     PLACEHOLDER_JUDGE_USAGE,
@@ -84,7 +85,9 @@ def main() -> None:
     if args.out_root is None:
         tag = args.model.replace("deepseek-", "")
         cd_tag = args.corpus_dir.name
-        args.out_root = REPO_ROOT / "runs" / f"dci_native_{tag}_t{args.max_model_calls}_{cd_tag}"
+        args.out_root = default_result_root(
+            REPO_ROOT, f"dci_native_{tag}_t{args.max_model_calls}_{cd_tag}"
+        )
     args.out_root = args.out_root.absolute()
     args.corpus_dir = args.corpus_dir.absolute()
     args.out_root.mkdir(parents=True, exist_ok=True)

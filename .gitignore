@@ -5,6 +5,7 @@ __pycache__/
 # data artifacts (download / build locally; see README)
 corpus/
 runs/
+result/
 indexes/
 *.parquet
 *.sqlite*

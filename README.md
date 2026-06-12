@@ -79,7 +79,8 @@ RISE_Meeting/
   tests/                   # Unit tests for adapters and meeting-aware behavior
 
   corpus/                  # Generated complete documents; ignored by Git
-  runs/                    # Generated manifests, indexes, runs, and logs; ignored
+  runs/                    # Generated corpora, indexes, and build logs; ignored
+  result/                  # Query answers, traces, evaluations, and costs; ignored
   data/local/              # Local query sets or collection data; ignored
 ```
 
@@ -298,11 +299,10 @@ contracts.
 
 ## Run Outputs
 
-Each RISE run creates a directory under `runs/`:
+Each RISE run creates a persistent result directory under `result/`:
 
 ```text
-runs/rise_<model>_t<turns>_k<k>_<index>/
-  _working/qid<id>/          # Bounded documents available to the agent
+result/rise_<model>_t<turns>_k<k>_<index>/
   _traces/qid_<id>/single.json
                              # Search, shell, read, and model trajectory
   _per_query/qid_<id>.json   # Answer, surfaced documents, coverage, and cost
@@ -310,9 +310,26 @@ runs/rise_<model>_t<turns>_k<k>_<index>/
   _judge_summary.json        # Answer accuracy after judging
 ```
 
-Use `_working` to inspect the actual interaction space. Use `_traces` to inspect
-the agent's search terms, shell commands, line reads, and final response. Use
-`_per_query` for machine-readable per-question evaluation.
+The bounded per-query workspace is created in the system temporary directory
+and deleted immediately after that query finishes. The workspace primarily
+uses filesystem hardlinks to expose retrieved corpus documents, but retaining
+one workspace per production query would still create unnecessary directory
+entries and operational state.
+
+Use `_traces` to inspect the agent's search terms, shell commands, line reads,
+surfaced documents, and final response. Use `_per_query` for machine-readable
+per-question evaluation.
+
+For debugging only, pass `--keep-workspace`. This preserves the interaction
+space under the result directory:
+
+```text
+result/rise_<model>_t<turns>_k<k>_<index>/
+  _working/qid<id>/          # Present only with --keep-workspace
+```
+
+Use `--out-root` to select a different persistent result directory. It does not
+change where temporary workspaces are created.
 
 ## Evaluation
 
@@ -320,14 +337,14 @@ Summarize retrieval recall, evidence recall, document coverage, tool usage,
 latency, and cost:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\summarize_runs.py runs\<run-directory>
+.\.venv\Scripts\python.exe scripts\summarize_runs.py result\<run-directory>
 ```
 
 Evaluate generated answers with the configured HKUST model:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\judge.py `
-  --run-dir runs\<run-directory> `
+  --run-dir result\<run-directory> `
   --mode online `
   --judge-model your_deployment_name
 ```
