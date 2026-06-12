@@ -28,6 +28,7 @@ from dotenv import load_dotenv
 load_dotenv(REPO_ROOT / ".env")
 
 from rise.api_retry import effective_reasoning_effort
+from rise.console import configure_console_stream
 from rise.dci_artifacts import PRICE_TABLE, estimate_cost
 from rise.decompose import make_client, resolve_model
 from rise.retrieval import load_index
@@ -48,6 +49,8 @@ DEFAULT_BC_PLUS_DOCS_STRUCTURED = REPO_ROOT / "corpus" / "bcp_plus_structured"
 
 
 def main() -> None:
+    configure_console_stream(sys.stdout)
+    configure_console_stream(sys.stderr)
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--mini-dev", type=Path, default=DEFAULT_MINI_DEV)
     ap.add_argument("--index-dir", type=Path, default=DEFAULT_INDEX)

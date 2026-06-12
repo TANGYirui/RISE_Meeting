@@ -57,6 +57,7 @@ load_dotenv(REPO_ROOT / ".env")
 
 from rise.api_retry import is_reasoner_model
 from rise.bcp_retrieval_agent import BCP_F_JUDGE_PROMPT, bcp_judge
+from rise.console import configure_console_stream
 from rise.decompose import make_client
 from rise.dci_artifacts import PRICE_TABLE, estimate_cost
 from rise.trajectory import atomic_write_json, is_judge_pending
@@ -634,6 +635,8 @@ def _write_judge_summary(
 
 
 def main() -> int:
+    configure_console_stream(sys.stdout)
+    configure_console_stream(sys.stderr)
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--run-dir",

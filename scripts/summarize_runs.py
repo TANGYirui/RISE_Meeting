@@ -20,8 +20,14 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import sys
 from pathlib import Path
 from typing import Any, Iterable
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from rise.console import configure_console_stream
 
 
 def _mean(xs: Iterable[float], default: float = 0.0) -> float:
@@ -33,12 +39,15 @@ def _load_per_query(run_dir: Path) -> list[dict[str, Any]]:
     pq_dir = run_dir / "_per_query"
     if not pq_dir.is_dir():
         return []
-    return [json.loads(p.read_text()) for p in sorted(pq_dir.glob("qid_*.json"))]
+    return [
+        json.loads(p.read_text(encoding="utf-8"))
+        for p in sorted(pq_dir.glob("qid_*.json"))
+    ]
 
 
 def _load_judge_summary(run_dir: Path) -> dict[str, Any]:
     f = run_dir / "_judge_summary.json"
-    return json.loads(f.read_text()) if f.is_file() else {}
+    return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
 
 
 def _bm25_recall_from_traces(run_dir: Path, rows: list[dict[str, Any]]) -> tuple[float, float, int]:
@@ -53,7 +62,7 @@ def _bm25_recall_from_traces(run_dir: Path, rows: list[dict[str, Any]]) -> tuple
         if not trace.is_file():
             continue
         try:
-            t = json.loads(trace.read_text())
+            t = json.loads(trace.read_text(encoding="utf-8"))
         except Exception:
             continue
         bm25_dids: set[str] = set()
@@ -258,6 +267,8 @@ def render_markdown(summaries: list[dict[str, Any]]) -> str:
 
 
 def main() -> None:
+    configure_console_stream(sys.stdout)
+    configure_console_stream(sys.stderr)
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("run_dirs", nargs="+", type=Path, help="One or more outputs/<run_dir>")
     ap.add_argument("--json", action="store_true",
