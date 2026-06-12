@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from hashlib import sha256
 from pathlib import Path
 
 from .uac_metadata import UACDocumentMetadata
@@ -36,6 +37,15 @@ class DoclingBackend:
         )
 
 
+def _disk_filename(doc_id: str, max_length: int = 128) -> str:
+    filename = f"{doc_id}.txt"
+    if len(filename) <= max_length:
+        return filename
+    suffix = sha256(doc_id.encode("utf-8")).hexdigest()[:12]
+    prefix_length = max_length - len(suffix) - len("_.txt")
+    return f"{doc_id[:prefix_length]}_{suffix}.txt"
+
+
 def write_extraction(
     metadata: UACDocumentMetadata,
     result: ExtractionResult,
@@ -44,7 +54,7 @@ def write_extraction(
     """Write one complete document and return its manifest record."""
     role_dir = output_root / metadata.role
     role_dir.mkdir(parents=True, exist_ok=True)
-    path = role_dir / f"{metadata.doc_id}.txt"
+    path = role_dir / _disk_filename(metadata.doc_id)
     header = [
         "---",
         f"doc_id: {metadata.doc_id}",
