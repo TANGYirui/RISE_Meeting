@@ -1137,6 +1137,7 @@ def make_bm25_search_tool(
     k: int = 100,
     top_n_preview: int = 10,
     snippet_chars: int = 100,
+    related_doc_ids_fn: Callable[[list[str]], list[str]] | None = None,
 ) -> Callable[[dict], str]:
     """Return a callable(args)->str that runs BM25 with one or more queries
     and ACCUMULATES the UNION of each query's top-k matches into working_dir
@@ -1221,16 +1222,24 @@ def make_bm25_search_tool(
         # Per query, retrieve top-k.
         per_query_results: list[list[tuple[str, float]]] = []  # (relpath, score)
         all_relpaths: set[str] = set()
+        retrieved_doc_ids: list[str] = []
         for q in queries:
             results = retrieve(searcher, doc_ids, q, k=k)
             top: list[tuple[str, float]] = []
             for docid, score in results:
+                retrieved_doc_ids.append(str(docid))
                 rel = docid_to_relpath.get(str(docid))
                 if not rel:
                     continue
                 top.append((rel, score))
                 all_relpaths.add(rel)
             per_query_results.append(top)
+
+        if related_doc_ids_fn is not None:
+            for related_doc_id in related_doc_ids_fn(retrieved_doc_ids):
+                rel = docid_to_relpath.get(str(related_doc_id))
+                if rel:
+                    all_relpaths.add(rel)
 
         # Hardlink the union.  Skip docs that already exist in working_dir
         # (we accumulate; previous contents are kept).

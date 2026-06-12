@@ -29,7 +29,7 @@ load_dotenv(REPO_ROOT / ".env")
 
 from rise.api_retry import effective_reasoning_effort
 from rise.dci_artifacts import PRICE_TABLE, estimate_cost
-from rise.decompose import make_client
+from rise.decompose import make_client, resolve_model
 from rise.retrieval import load_index
 from rise.rise_agent import run_rise_agent
 from rise.protocol import for_rise
@@ -38,6 +38,7 @@ from rise.trajectory import (
     SCHEMA_VERSION, atomic_write_json, build_per_query_row,
     cached_row_is_reusable, compute_run_config_hash,
 )
+from rise.uac_workspace import related_doc_ids
 
 DEFAULT_MINI_DEV = REPO_ROOT / "data" / "queries_100.jsonl"
 DEFAULT_INDEX = REPO_ROOT / "runs" / "bm25_full"
@@ -93,7 +94,11 @@ def main() -> None:
                     help="Ablation: drop the bash tool. Agent gets only "
                          "search + read — closer to a BCP retrieval-agent "
                          "setup without mini-corpus exploration.")
+    ap.add_argument("--document-manifest", type=Path)
+    ap.add_argument("--meeting-manifest", type=Path)
+    ap.add_argument("--related-doc-cap", type=int, default=20)
     args = ap.parse_args()
+    args.model = resolve_model(args.model)
 
     # Apply structured-docs default override BEFORE we touch args.bc_plus_docs.
     if args.structured_docs and args.bc_plus_docs == DEFAULT_BC_PLUS_DOCS:
@@ -177,6 +182,13 @@ def main() -> None:
         json.loads(l) for l in args.mini_dev.read_text(encoding="utf-8").splitlines()
         if l.strip()
     ]
+    related_fn = None
+    if args.document_manifest and args.meeting_manifest:
+        document_manifest = json.loads(args.document_manifest.read_text(encoding="utf-8"))
+        meeting_manifest = json.loads(args.meeting_manifest.read_text(encoding="utf-8"))
+        related_fn = lambda hits: related_doc_ids(
+            hits, document_manifest, meeting_manifest, cap=args.related_doc_cap
+        )
     print(f"running RISE on {len(records)} queries")
     print(f"  model={args.model}  (judge: decoupled — run scripts/judge.py after)")
     print(f"  max_turns={args.max_turns}  bm25_k={args.bm25_k}  bash_truncate={args.bash_truncate_chars}")
@@ -234,6 +246,7 @@ def main() -> None:
             enable_sandbox=(not args.no_sandbox),
             parent_docs_root=bc_plus_docs_root if args.passage_mode else None,
             relpath_to_parent_docid=relpath_to_parent_docid if args.passage_mode else None,
+            related_doc_ids_fn=related_fn,
         )
 
         # Cost: agent only. Judge is decoupled — `scripts/judge.py` reads

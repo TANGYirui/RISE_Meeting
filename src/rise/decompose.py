@@ -1,4 +1,4 @@
-"""Query decomposition via DeepSeek (OpenAI-compatible).
+"""Query decomposition through an OpenAI-compatible API.
 
 Two prompt styles:
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from openai import OpenAI
@@ -86,7 +87,59 @@ PROMPT_STYLES = {
 }
 
 
-def make_client(model: str | None = None) -> OpenAI:
+@dataclass(frozen=True)
+class ProviderConfig:
+    api_key: str
+    base_url: str
+    default_headers: dict[str, str] | None = None
+
+
+def _legacy_provider_config(model: str | None = None) -> ProviderConfig:
+    """Resolve provider credentials without constructing a network client."""
+    m = (model or "").strip().lower()
+    hkust_model = os.getenv("HKUST_GENAI_MODEL", "").strip().lower()
+    if os.getenv("HKUST_GENAI_API_KEY") and (not m or m == hkust_model):
+        api_key = os.environ["HKUST_GENAI_API_KEY"]
+        endpoint = os.getenv(
+            "HKUST_GENAI_ENDPOINT",
+            "https://hkust.azure-api.net/hkust-genai/v1/chat/completions",
+        ).rstrip("/")
+        return ProviderConfig(
+            api_key,
+            re.sub(r"/chat/completions$", "", endpoint),
+            {"api-key": api_key},
+        )
+    if m.startswith("mimo"):
+        api_key = os.getenv("XIAOMI_API_KEY")
+        if not api_key:
+            raise RuntimeError("XIAOMI_API_KEY not set; required for mimo-* models")
+        return ProviderConfig(api_key, os.getenv("XIAOMI_BASE_URL") or "https://api.xiaomimimo.com/v1")
+    if m.startswith("deepseek"):
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise RuntimeError("DEEPSEEK_API_KEY not set; required for deepseek-* models")
+        return ProviderConfig(api_key, os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1")
+    if m.startswith(("gpt-5", "o3", "o4", "o5")):
+        api_key = os.getenv("OPENAI_DIRECT_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_DIRECT_API_KEY required for gpt-5/o-series models")
+        return ProviderConfig(api_key, "https://api.openai.com/v1")
+    api_key = os.getenv("XIAOMI_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "No API key set: expected HKUST_GENAI_API_KEY, XIAOMI_API_KEY, "
+            "DEEPSEEK_API_KEY, or OPENAI_API_KEY in .env"
+        )
+    return ProviderConfig(
+        api_key,
+        os.getenv("XIAOMI_BASE_URL")
+        or os.getenv("DEEPSEEK_BASE_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or "https://api.deepseek.com/v1",
+    )
+
+
+def _legacy_make_client(model: str | None = None) -> OpenAI:
     """Build an OpenAI-compatible client, routed by `model` prefix when given.
 
     - `mimo-*`     → Xiaomi MiMo (XIAOMI_API_KEY / XIAOMI_BASE_URL)
@@ -99,8 +152,14 @@ def make_client(model: str | None = None) -> OpenAI:
     Callers that don't yet know the model can pass `model=None` and fall
     through to the default (Xiaomi, if configured).
     """
-    m = (model or "").strip().lower()
+    config = _legacy_provider_config(model)
+    return OpenAI(
+        api_key=config.api_key,
+        base_url=config.base_url,
+        default_headers=config.default_headers,
+    )
 
+    m = (model or "").strip().lower()
     def _xiaomi_creds() -> tuple[str | None, str | None]:
         return os.getenv("XIAOMI_API_KEY"), os.getenv("XIAOMI_BASE_URL")
 
@@ -147,6 +206,40 @@ def make_client(model: str | None = None) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
+def resolve_model(model: str | None = None) -> str:
+    """Always use the configured HKUST deployment."""
+    resolved = os.getenv("HKUST_GENAI_MODEL", "").strip()
+    if not resolved:
+        raise RuntimeError("HKUST_GENAI_MODEL is not configured")
+    return resolved
+
+
+def provider_config(model: str | None = None) -> ProviderConfig:
+    """Resolve the HKUST Azure gateway; other providers are unsupported."""
+    api_key = os.getenv("HKUST_GENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("HKUST_GENAI_API_KEY is not configured")
+    endpoint = os.getenv(
+        "HKUST_GENAI_ENDPOINT",
+        "https://hkust.azure-api.net/hkust-genai/v1/chat/completions",
+    ).rstrip("/")
+    return ProviderConfig(
+        api_key,
+        re.sub(r"/chat/completions$", "", endpoint),
+        {"api-key": api_key},
+    )
+
+
+def make_client(model: str | None = None) -> OpenAI:
+    """Build the HKUST-only OpenAI-compatible client."""
+    config = provider_config(resolve_model(model))
+    return OpenAI(
+        api_key=config.api_key,
+        base_url=config.base_url,
+        default_headers=config.default_headers,
+    )
+
+
 
 
 
@@ -172,7 +265,8 @@ def decompose(
     client: OpenAI | None = None,
 ) -> dict[str, Any]:
     """Return a dict {candidate_entities, sub_queries, rationale, _usage, _raw}."""
-    client = client or make_client()
+    model = resolve_model(model)
+    client = client or make_client(model)
     if prompt_style not in PROMPT_STYLES:
         raise ValueError(f"unknown prompt_style: {prompt_style}; choose from {list(PROMPT_STYLES)}")
     system_prompt = PROMPT_STYLES[prompt_style]

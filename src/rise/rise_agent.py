@@ -384,6 +384,7 @@ def run_rise_agent(
     # ("passage" or "doc") — these params carry the runtime resources.
     parent_docs_root: Path | None = None,
     relpath_to_parent_docid: dict[str, str] | None = None,
+    related_doc_ids_fn=None,
 ) -> RISERun:
     """Run RISE on one query.
 
@@ -432,6 +433,7 @@ def run_rise_agent(
         working_dir=working_dir, k=bm25_k,
         top_n_preview=bm25_top_n_preview,
         snippet_chars=bm25_snippet_chars,
+        related_doc_ids_fn=related_doc_ids_fn,
     )
     bash_fn = make_bash_tool(
         working_dir, truncate_chars=bash_truncate_chars,

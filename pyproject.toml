@@ -19,7 +19,12 @@ dependencies = [
     # BCP retrieval-agent baseline only: upstream-faithful snippet truncation
     # via the Qwen/Qwen3-0.6B tokenizer (AutoTokenizer; no torch needed).
     "transformers>=4.46.0",
+    "pymupdf",
 ]
+
+[project.optional-dependencies]
+extract = ["docling"]
+test = ["pytest"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rise"]

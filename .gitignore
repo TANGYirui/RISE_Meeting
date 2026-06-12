@@ -7,3 +7,9 @@ corpus/
 runs/
 indexes/
 *.parquet
+*.sqlite*
+reports/
+data/local/
+docs/
+.pytest_cache/
+.coverage
