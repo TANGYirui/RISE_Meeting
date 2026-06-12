@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from rise.uac_pipeline import (
     pending_pdfs,
     retain_matching_records,
     save_checkpoint,
+    should_recycle_backend,
     upsert_record,
 )
 
@@ -34,6 +36,13 @@ def main() -> None:
     parser.add_argument("--extracted-dir", type=Path, default=REPO_ROOT / "corpus" / "uac_extracted")
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "uac_corpus")
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--converter-recycle-every",
+        type=int,
+        default=25,
+        metavar="N",
+        help="Recreate the Docling converter every N pending documents to bound memory growth; use 0 to disable.",
+    )
     parser.add_argument(
         "--meeting-date",
         help="Only convert documents whose filename metadata has this ISO meeting date.",
@@ -75,9 +84,21 @@ def main() -> None:
         if str(stale_path).startswith(str(extracted_root)) and stale_path.is_file():
             stale_path.unlink()
     pending = pending_pdfs(pdfs, records)
-    backend = DoclingBackend()
+    backend = None
     print(f"selected={len(pdfs)} completed={len(pdfs) - len(pending)} pending={len(pending)}", flush=True)
     for processed, pdf in enumerate(pending, start=1):
+        if should_recycle_backend(processed, args.converter_recycle_every):
+            backend = None
+            gc.collect()
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
+            backend = DoclingBackend()
+            print(f"recycled Docling converter before pending document {processed}", flush=True)
         metadata = metadata_by_filename.get(pdf.name)
         if metadata is None:
             record = {"filename": pdf.name, "status": "failed", "error": "unrecognized filename", "relpath": ""}

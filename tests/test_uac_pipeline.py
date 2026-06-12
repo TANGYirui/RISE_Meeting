@@ -5,6 +5,7 @@ from rise.uac_pipeline import (
     pending_pdfs,
     retain_matching_records,
     save_checkpoint,
+    should_recycle_backend,
 )
 
 
@@ -56,3 +57,10 @@ def test_retain_matching_records_invalidates_changed_doc_ids():
 
     assert retained == [records[1]]
     assert stale == ["minutes/old.txt"]
+
+
+def test_backend_recycling_schedule():
+    assert should_recycle_backend(1, 25)
+    assert not should_recycle_backend(25, 25)
+    assert should_recycle_backend(26, 25)
+    assert not should_recycle_backend(100, 0)

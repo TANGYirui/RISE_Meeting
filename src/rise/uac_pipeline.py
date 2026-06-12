@@ -56,3 +56,8 @@ def retain_matching_records(
             continue
         retained.append(record)
     return retained, sorted(set(stale_relpaths))
+
+
+def should_recycle_backend(processed: int, every: int) -> bool:
+    """Return whether a new converter should be created for this document."""
+    return every > 0 and (processed - 1) % every == 0

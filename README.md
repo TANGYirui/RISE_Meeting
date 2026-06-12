@@ -192,7 +192,15 @@ Extraction is resumable:
 - each completed document is written to the checkpoint immediately
 - successful documents are skipped on the next run
 - failed documents are retried on the next run
-- the same Docling converter is reused during one process
+- the Docling converter is recycled periodically to bound long-run memory growth
+
+The default recycle interval is 25 pending documents. Change it when needed:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\build_uac_corpus.py `
+  --source-dir path\to\pdfs `
+  --converter-recycle-every 10
+```
 
 Generated complete documents:
 
