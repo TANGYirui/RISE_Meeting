@@ -13,6 +13,7 @@ PRIORITY_INTENTS = {
     "retrieve_topics",
     "people_by_topic",
     "person_topic_check",
+    "person_profile",
 }
 
 
@@ -29,7 +30,11 @@ class FollowUpResult:
 
 def classify_inquiry(question: str) -> IntentResult:
     normalized = " ".join(question.lower().split())
-    if re.search(r"\bwho\b.*\b(discuss|talk|present)", normalized):
+    if re.search(r"^\s*who\s+is\s+.+[?.!]?\s*$", normalized) or re.search(
+        r".+\s*(?:是谁|是誰)[？?]?\s*$", question
+    ):
+        intent = "person_profile"
+    elif re.search(r"\bwho\b.*\b(discuss|talk|present)", normalized):
         intent = "people_by_topic"
     elif re.search(r"\b(did|does|has|have)\b.+\b(discuss|talk|present)", normalized):
         intent = "person_topic_check"
@@ -40,6 +45,24 @@ def classify_inquiry(question: str) -> IntentResult:
     else:
         intent = "general_inquiry"
     return IntentResult(intent, intent in PRIORITY_INTENTS)
+
+
+def extract_topic(question: str, intent: str) -> str:
+    """Extract the literal topic phrase used for high-recall full-corpus scans."""
+    value = question.strip().strip("?.!。？ ")
+    patterns = {
+        "retrieve_topics": [r"(?i)\bon\s+(.+)$", r"(?i)\b(?:about|for)\s+(.+)$"],
+        "topic_discussion": [r"(?i)\b(?:discussion|discussed)\s+(?:on|about)\s+(.+)$"],
+        "people_by_topic": [r"(?i)\b(?:discussed|talked about|presented)\s+(.+)$"],
+        "person_topic_check": [r"(?i)\b(?:discuss|talk about|present)\s+(.+)$"],
+    }
+    for pattern in patterns.get(intent, []):
+        match = re.search(pattern, value)
+        if match:
+            topic = match.group(1).strip()
+            if topic.casefold() not in {"it", "this", "this topic", "that topic"}:
+                return topic
+    return ""
 
 
 def resolve_follow_up(question: str, recent_turns: Sequence[ConversationTurn]) -> FollowUpResult:
@@ -54,4 +77,3 @@ def resolve_follow_up(question: str, recent_turns: Sequence[ConversationTurn]) -
         "sort by date",
     }
     return FollowUpResult(bool(recent_turns) and normalized in controls)
-

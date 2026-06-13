@@ -88,3 +88,63 @@ def test_rise_answer_is_visible_without_replacing_verified_result_groups(tmp_pat
     assert inquiry.response["conclusion"] == "Kar Yan Tam is Dean and Chair Professor."
     assert inquiry.response["answer_explanation"]
     assert inquiry.response["verified_count"] == 0
+
+
+def test_person_profile_uses_alias_full_scan_and_only_confirms_active_participation(tmp_path: Path):
+    manifest = {
+        "absence": {
+            "doc_id": "absence", "filename": "Minutes_absence.pdf", "role": "minutes",
+            "meeting_date": "2018-01-16", "relpath": "absence.txt",
+        },
+        "discussion": {
+            "doc_id": "discussion", "filename": "Minutes_discussion.pdf", "role": "minutes",
+            "meeting_date": "2019-02-15", "relpath": "discussion.txt",
+        },
+    }
+    (tmp_path / "absence.txt").write_text(
+        "Item 1\nProfessor Kar Yan Tam sent apologies for absence.", encoding="utf-8"
+    )
+    (tmp_path / "discussion.txt").write_text(
+        "Item 4\nProfessor Kar-Yan Tam commented on the proposed financial management system.",
+        encoding="utf-8",
+    )
+    queries = []
+
+    def retrieve(query, depth):
+        queries.append(query)
+        return []
+
+    service = InquiryService(
+        manifest, {}, tmp_path, retrieve, InquiryStore(tmp_path / "db.sqlite"),
+        verifier=lambda topic, question: {"status": "confirmed", "reason": "LLM said yes"},
+        investigator=lambda question: InvestigationResult(set(), {}),
+    )
+
+    inquiry = service.create_inquiry("s", "Who is Kar Yan Tam?")
+
+    assert inquiry.intent == "person_profile"
+    assert {"Kar Yan Tam", "Tam Kar Yan", "Kar-Yan Tam", "K. Y. Tam", "K Y Tam"} <= set(queries)
+    assert [topic.meeting_date for topic in inquiry.confirmed_topics] == ["2019-02-15"]
+    assert inquiry.response["person_profile"]["mention_doc_count"] == 2
+    assert inquiry.response["person_profile"]["active_doc_count"] == 1
+
+
+def test_topic_inquiry_exact_scans_extracted_topic_instead_of_whole_question(tmp_path: Path):
+    manifest = {
+        "fees": {
+            "doc_id": "fees", "filename": "Fees.pdf", "role": "agenda_item",
+            "meeting_date": "2024-01-01", "item_number": 2, "title": "Fees",
+            "relpath": "fees.txt",
+        }
+    }
+    (tmp_path / "fees.txt").write_text("A proposal concerning tuition fees.", encoding="utf-8")
+    service = InquiryService(
+        manifest, {}, tmp_path, lambda query, depth: [], InquiryStore(tmp_path / "db.sqlite"),
+        verifier=lambda topic, question: {"status": "confirmed", "reason": "exact topic phrase"},
+    )
+
+    inquiry = service.create_inquiry("s", "Retrieve all UAC papers on tuition fees")
+
+    assert inquiry.topic == "tuition fees"
+    assert inquiry.response["verified_count"] == 1
+    assert "exact_scan:tuition fees" in inquiry.retrieval_audit["candidate_sources"]["fees"]

@@ -33,7 +33,10 @@ def test_api_serves_inquiry_static_frontend_and_original_pdf(tmp_path: Path):
     assert response.status_code == 200
     assert response.json()["response"]["verified_count"] == 1
     assert client.get("/").status_code == 200
-    assert "RISE Meeting" in client.get("/").text
+    frontend = client.get("/").text
+    assert "RISE Meeting" in frontend
+    assert 'id="chat-transcript"' in frontend
+    assert 'id="chat-composer"' in frontend
     assert client.get("/api/sources/item3/pdf").content == b"%PDF"
     inquiry_id = response.json()["inquiry_id"]
     summary = client.post(f"/api/inquiries/{inquiry_id}/continue-summaries")

@@ -7,36 +7,27 @@
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-  <main>
-    <header>
-      <p class="eyebrow">Accuracy-first UAC inquiry</p>
-      <h1>RISE Meeting</h1>
-      <p>Search complete agenda papers and official Minutes with evidence-linked answers.</p>
+  <main class="app-shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Accuracy-first UAC inquiry</p>
+        <h1>RISE Meeting</h1>
+      </div>
+      <button id="new-chat" class="secondary" type="button">New chat</button>
     </header>
-    <form id="inquiry-form">
-      <textarea id="question" required placeholder="Ask about a topic, person, history, or comparison..."></textarea>
+
+    <section id="chat-transcript" class="chat-transcript" aria-live="polite">
+      <article class="message assistant-message welcome-message">
+        <p class="eyebrow">RISE Meeting</p>
+        <h2>Ask across complete UAC agenda papers and official Minutes.</h2>
+        <p>I will separate confirmed evidence from possible matches, preserve the conversation, and link every source back to its original PDF.</p>
+      </article>
+    </section>
+
+    <form id="chat-composer" class="chat-composer">
+      <textarea id="question" required rows="2" placeholder="Ask about a topic, person, history, or comparison..."></textarea>
       <button type="submit">Investigate</button>
     </form>
-    <section id="status" aria-live="polite"></section>
-    <section id="answer" hidden>
-      <div class="answer-head">
-        <div>
-          <p class="eyebrow">Direct answer</p>
-          <h2 id="conclusion"></h2>
-          <p id="explanation"></p>
-          <p id="confidence" class="confidence"></p>
-        </div>
-        <select id="sort"><option value="relevance">Relevance</option><option value="chronological_desc">Newest first</option></select>
-      </div>
-      <div class="result-summary"><p class="eyebrow">Verified retrieval summary</p><p id="result-summary"></p></div>
-      <p id="scope"></p>
-      <div class="counts"><strong id="confirmed-count"></strong><span id="possible-count"></span></div>
-      <button id="summarize" type="button">Summarize next results</button>
-      <div id="confirmed"></div>
-      <div id="people"></div>
-      <details><summary>Possible results</summary><div id="possible"></div></details>
-      <details><summary>Retrieval audit</summary><pre id="audit"></pre></details>
-    </section>
   </main>
   <script src="/static/js/app.js"></script>
 </body>

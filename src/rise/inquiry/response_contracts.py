@@ -10,6 +10,7 @@ PRIORITY_CONTRACTS = {
     "retrieve_topics": "topic_inventory",
     "people_by_topic": "people_summary",
     "person_topic_check": "person_topic_verdict",
+    "person_profile": "person_profile",
 }
 
 

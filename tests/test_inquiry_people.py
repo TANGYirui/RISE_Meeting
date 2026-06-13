@@ -1,5 +1,10 @@
 from rise.inquiry.models import AgendaTopic, MinutesEvidence
-from rise.inquiry.people import aggregate_people
+from rise.inquiry.people import (
+    aggregate_people,
+    analyze_person_documents,
+    build_person_aliases,
+    extract_person_name,
+)
 
 
 def test_people_are_normalized_and_aggregated_across_topics():
@@ -15,3 +20,52 @@ def test_people_are_normalized_and_aggregated_across_topics():
     assert people[0].name == "Nancy Ip"
     assert people[0].topic_ids == ["a", "b"]
     assert people[0].evidence[0].doc_id == "m1"
+
+
+def test_person_name_and_aliases_cover_historical_name_orderings():
+    name = extract_person_name("Who is Kar Yan Tam?")
+    aliases = build_person_aliases(name)
+
+    assert name == "Kar Yan Tam"
+    assert {"Kar Yan Tam", "Tam Kar Yan", "Kar-Yan Tam", "K. Y. Tam", "K Y Tam"} <= set(aliases)
+
+
+def test_person_document_analysis_separates_roles_participation_and_attendance(tmp_path):
+    manifest = {
+        "old": {
+            "doc_id": "old", "filename": "minutes_old.pdf", "role": "minutes",
+            "meeting_date": "2001-08-06", "relpath": "old.txt",
+        },
+        "absence": {
+            "doc_id": "absence", "filename": "minutes_absence.pdf", "role": "minutes",
+            "meeting_date": "2018-01-16", "relpath": "absence.txt",
+        },
+        "discussion": {
+            "doc_id": "discussion", "filename": "minutes_discussion.pdf", "role": "minutes",
+            "meeting_date": "2019-02-15", "relpath": "discussion.txt",
+        },
+    }
+    (tmp_path / "old.txt").write_text(
+        "Kar-Yan Tam, Associate Dean, School of Business and Management", encoding="utf-8"
+    )
+    (tmp_path / "absence.txt").write_text(
+        "Professor Kar Yan Tam sent apologies for absence.", encoding="utf-8"
+    )
+    (tmp_path / "discussion.txt").write_text(
+        "Professor Kar Yan Tam commented on the proposed financial management system.",
+        encoding="utf-8",
+    )
+
+    result = analyze_person_documents("Kar Yan Tam", manifest, tmp_path)
+
+    assert result["mention_doc_count"] == 3
+    assert result["active_doc_ids"] == ["discussion"]
+    assert result["attendance_only_doc_ids"] == ["absence", "old"]
+    assert result["roles"] == [
+        {
+            "role": "Associate Dean, School of Business and Management",
+            "years": ["2001"],
+            "doc_ids": ["old"],
+        }
+    ]
+    assert result["active_mentions"][0]["excerpt"].startswith("Professor Kar Yan Tam commented")

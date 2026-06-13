@@ -13,11 +13,18 @@ from rise.retrieval import load_index, retrieve
 from rise.uac_workspace import related_doc_ids
 
 from .discovery import discover_candidates
-from .intents import classify_inquiry
+from .intents import classify_inquiry, extract_topic
 from .investigation import RiseInvestigator
 from .llm import HKUSTBatchVerifier
 from .models import ConversationTurn, Inquiry
-from .people import aggregate_people
+from .people import (
+    aggregate_people,
+    analyze_person_documents,
+    build_person_aliases,
+    ensure_active_person_topics,
+    extract_person_name,
+    topic_has_active_person_evidence,
+)
 from .response_contracts import build_response, select_response_contract
 from .store import InquiryStore
 from .summaries import next_summary_batch
@@ -71,29 +78,52 @@ class InquiryService:
 
     def create_inquiry(self, session_id: str, question: str) -> Inquiry:
         classified = classify_inquiry(question)
+        person_name = extract_person_name(question) if classified.intent == "person_profile" else ""
+        aliases = build_person_aliases(person_name)
+        topic_query = extract_topic(question, classified.intent)
+        queries = aliases or list(
+            dict.fromkeys([question, topic_query] if topic_query else [question])
+        )
         discovery = discover_candidates(
-            [question],
-            [question],
+            queries,
+            [] if person_name else ([topic_query] if topic_query else [question]),
             self.retrieve_fn,
             self.document_manifest,
             self.corpus_root,
             depth=self.discovery_depth,
         )
         expanded = set(discovery.doc_ids)
+        person_profile = None
+        if person_name:
+            person_profile = analyze_person_documents(
+                person_name, self.document_manifest, self.corpus_root
+            )
+            expanded = set(person_profile["active_doc_ids"])
         investigation_audit = {}
         if self.investigator is not None:
             investigation = self.investigator(question)
             expanded.update(investigation.doc_ids)
             investigation_audit = investigation.audit
-        expanded.update(
-            related_doc_ids(
-                list(expanded),
-                self.document_manifest,
-                self.meeting_manifest,
-                cap=100,
+        if not person_name:
+            expanded.update(
+                related_doc_ids(
+                    list(expanded),
+                    self.document_manifest,
+                    self.meeting_manifest,
+                    cap=100,
+                )
             )
-        )
-        topics = assemble_topics(expanded, self.document_manifest, self._texts(expanded))
+        texts = self._texts(expanded)
+        topics = assemble_topics(expanded, self.document_manifest, texts)
+        if person_name:
+            topics = [
+                topic
+                for topic in topics
+                if topic_has_active_person_evidence(topic, aliases, texts)
+            ]
+            topics = ensure_active_person_topics(
+                topics, person_profile, self.document_manifest
+            )
         for topic in topics:
             topic.relevance_score = max(
                 (discovery.scores.get(doc_id, 0.0) for doc_id in topic.candidate_sources),
@@ -103,7 +133,19 @@ class InquiryService:
                 if source:
                     source.source_url = f"/api/sources/{source.doc_id}/pdf"
                     source.has_source_pdf = True
-        verified = verify_topics(topics, question, self.verifier)
+        if person_name:
+            for topic in topics:
+                topic.verification_status = "confirmed"
+                topic.verification_reason = (
+                    f"Confirmed active participation by {person_name} in the source text."
+                )
+            verified = type(
+                "PersonVerification",
+                (),
+                {"confirmed": topics, "possible": [], "rejected": []},
+            )()
+        else:
+            verified = verify_topics(topics, question, self.verifier)
         people = aggregate_people(verified.confirmed)
         contract = select_response_contract(classified.intent, question)
         confirmed_payload = [topic.__dict__ | {"agenda_document": topic.agenda_document.__dict__ if topic.agenda_document else None} for topic in verified.confirmed]
@@ -128,6 +170,26 @@ class InquiryService:
                 "rise_investigation": investigation_audit,
             },
         )
+        if person_profile is not None:
+            roles = person_profile["roles"]
+            if roles:
+                response["conclusion"] = f"{person_name}: {roles[-1]['role']}."
+            response["answer_explanation"] = (
+                f"Found {person_profile['mention_doc_count']} documents mentioning {person_name}; "
+                f"{len(person_profile['active_doc_ids'])} contain active participation."
+            )
+            response["answer_source"] = "complete_person_scan"
+            response["person_profile"] = {
+                **person_profile,
+                "active_doc_count": len(person_profile["active_doc_ids"]),
+                "attendance_only_doc_count": len(person_profile["attendance_only_doc_ids"]),
+            }
+            response["retrieval_audit"]["person_scan"] = {
+                "aliases": aliases,
+                "mention_doc_count": person_profile["mention_doc_count"],
+                "active_doc_count": len(person_profile["active_doc_ids"]),
+                "attendance_only_doc_count": len(person_profile["attendance_only_doc_ids"]),
+            }
         inquiry = Inquiry(
             inquiry_id=uuid.uuid4().hex,
             session_id=session_id,
@@ -135,6 +197,10 @@ class InquiryService:
             resolved_question=question,
             intent=classified.intent,
             is_priority_intent=classified.is_priority_intent,
+            person=person_name,
+            topic=topic_query,
+            aliases=aliases,
+            query_rewrites=queries,
             confirmed_topics=verified.confirmed,
             possible_topics=verified.possible,
             rejected_topics=verified.rejected,

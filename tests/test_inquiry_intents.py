@@ -1,4 +1,4 @@
-from rise.inquiry.intents import classify_inquiry, resolve_follow_up
+from rise.inquiry.intents import classify_inquiry, extract_topic, resolve_follow_up
 from rise.inquiry.models import ConversationTurn
 
 
@@ -8,9 +8,17 @@ def test_priority_and_general_intents_are_classified():
     assert classify_inquiry("Did Leonard Cheng present this topic?").intent == "person_topic_check"
     assert classify_inquiry("Is there any discussion on net zero?").intent == "topic_discussion"
     assert classify_inquiry("Compare the roles of two vice-presidents").intent == "general_inquiry"
+    assert classify_inquiry("Who is Kar Yan Tam?").intent == "person_profile"
+    assert classify_inquiry("Tam Kar Yan 是谁？").intent == "person_profile"
 
 
 def test_follow_up_resolution_is_conservative():
     turns = [ConversationTurn("assistant", "There are 20 confirmed results.")]
     assert resolve_follow_up("What about ITSO?", turns).is_follow_up is False
     assert resolve_follow_up("Continue summarizing", turns).is_follow_up is True
+
+
+def test_topic_is_extracted_for_complete_exact_scan():
+    assert extract_topic("Retrieve all UAC papers on tuition fees", "retrieve_topics") == "tuition fees"
+    assert extract_topic("Who discussed student housing?", "people_by_topic") == "student housing"
+    assert extract_topic("Is there any discussion on net zero?", "topic_discussion") == "net zero"
