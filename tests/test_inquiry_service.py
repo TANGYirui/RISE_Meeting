@@ -1,7 +1,7 @@
 from pathlib import Path
 import re
 
-from rise.inquiry.models import ConversationTurn
+from rise.inquiry.models import AgendaTopic, ConversationTurn
 from rise.inquiry.investigation import InvestigationResult
 from rise.inquiry.service import InquiryService
 from rise.inquiry.store import InquiryStore
@@ -148,3 +148,42 @@ def test_topic_inquiry_exact_scans_extracted_topic_instead_of_whole_question(tmp
     assert inquiry.topic == "tuition fees"
     assert inquiry.response["verified_count"] == 1
     assert "exact_scan:tuition fees" in inquiry.retrieval_audit["candidate_sources"]["fees"]
+
+
+def test_new_inquiry_defaults_to_newest_first_and_reports_year_coverage(tmp_path: Path):
+    manifest = {}
+    for year in ("1995", "2025"):
+        doc_id = f"fees-{year}"
+        manifest[doc_id] = {
+            "doc_id": doc_id, "filename": f"Fees-{year}.pdf", "role": "agenda_item",
+            "meeting_date": f"{year}-01-01", "item_number": 2, "title": "Fees",
+            "relpath": f"{doc_id}.txt",
+        }
+        (tmp_path / f"{doc_id}.txt").write_text("tuition fees", encoding="utf-8")
+    service = InquiryService(
+        manifest, {}, tmp_path,
+        lambda query, depth: [("fees-1995", 1.0), ("fees-2025", 1.0)],
+        InquiryStore(tmp_path / "db.sqlite"),
+        verifier=lambda topic, question: {"status": "confirmed", "reason": "match"},
+    )
+
+    inquiry = service.create_inquiry("s", "Retrieve all UAC papers on tuition fees")
+
+    assert inquiry.sort_order == "chronological_desc"
+    assert [topic.meeting_date[:4] for topic in inquiry.confirmed_topics] == ["2025", "1995"]
+    assert inquiry.response["year_coverage"]["corpus"] == {"from": "1995", "to": "2025"}
+    assert inquiry.response["year_coverage"]["confirmed"] == {"from": "1995", "to": "2025"}
+
+
+def test_relevance_sort_breaks_equal_scores_by_newest_date(tmp_path: Path):
+    service = InquiryService({}, {}, tmp_path, lambda query, depth: [], InquiryStore(tmp_path / "db.sqlite"))
+    inquiry = service.create_inquiry("s", "General question")
+    inquiry.confirmed_topics = [
+        AgendaTopic("old", "Old", "1995-01-01", relevance_score=1.0),
+        AgendaTopic("new", "New", "2025-01-01", relevance_score=1.0),
+    ]
+    service.store.save_inquiry(inquiry)
+
+    updated = service.set_sort(inquiry.inquiry_id, "relevance")
+
+    assert [topic.topic_id for topic in updated.confirmed_topics] == ["new", "old"]

@@ -53,6 +53,9 @@ function personProfile(profile) {
 
 function assistantMarkup(data) {
   const response = data.response;
+  const coverage = response.year_coverage || {};
+  const corpusCoverage = coverage.corpus?.from ? `${coverage.corpus.from}–${coverage.corpus.to}` : "Unavailable";
+  const confirmedCoverage = coverage.confirmed?.from ? `${coverage.confirmed.from}–${coverage.confirmed.to}` : "No confirmed years";
   return `<article class="message assistant-message" data-inquiry-id="${escapeHtml(data.inquiry_id)}">
     <p class="eyebrow">Direct answer</p>
     <h2>${escapeHtml(response.conclusion)}</h2>
@@ -63,6 +66,7 @@ function assistantMarkup(data) {
       <p class="eyebrow">Verified retrieval summary</p>
       <p>${escapeHtml(response.result_summary)}</p>
       <p>${escapeHtml(response.searched_scope)}</p>
+      <p class="coverage"><strong>Corpus coverage:</strong> ${escapeHtml(corpusCoverage)} · <strong>Confirmed result coverage:</strong> ${escapeHtml(confirmedCoverage)}</p>
       <div class="counts"><strong>${response.verified_count} confirmed</strong><span>${response.possible_count} possible</span></div>
       <div class="message-actions">
         <select class="sort-select" aria-label="Sort results">
@@ -132,6 +136,13 @@ form.addEventListener("submit", async event => {
     thinking.querySelector("p").textContent = `Inquiry failed: ${error.message}`;
   }
   scrollToLatest();
+});
+
+questionBox.addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    form.requestSubmit();
+  }
 });
 
 transcript.addEventListener("change", async event => {

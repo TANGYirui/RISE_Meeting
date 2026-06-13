@@ -14,6 +14,7 @@ ACTIVE_VERBS = re.compile(
     r"introduc(?:ed|es)?|present(?:ed|s)?|propos(?:ed|es)?|report(?:ed|s)?|"
     r"suggest(?:ed|s)?|clarif(?:ied|ies)?|express(?:ed|es)?|respond(?:ed|s)?|"
     r"recommend(?:ed|s)?|tabled|raised|highlight(?:ed|s)?|shared|enquired|"
+    r"briefed|supplemented|reaffirmed|elaborated|led|"
     r"noted|gave\s+an?\s+update|spoke|talk(?:ed|s)?)\b",
     re.I,
 )
@@ -24,9 +25,9 @@ ATTENDANCE_ONLY = re.compile(
 ROLE_PATTERN = re.compile(
     r"\b(?:Associate\s+Dean(?:,\s*.*?)?|Dean(?:,\s*.*?)?|"
     r"Chair\s+Professor(?:,\s*.*?)?|Senate\s+Representative|"
-    r"AVP-[A-Z-]+|Associate\s+Vice-President(?:,\s*.*?)?|"
-    r"Vice-President(?:,\s*.*?)?)"
-    r"(?=\s+(?:Professor|Prof\.?|Dr|Mr|Mrs|Ms)\b|[;\n.]|$)",
+    r"AVP-[A-Z-]+|(?:Acting\s+)?(?:Associate\s+)?Vice-President"
+    r"(?:\s+for\s+[^,|;\n.]+|,\s*[^,|;\n.]+)?)"
+    r"(?=\s+(?:Professor|Prof\.?|Dr|Mr|Mrs|Ms)\b|[,|;\n.]|$)",
     re.I,
 )
 PROFILE_ROLES = {"agenda_item", "minutes"}
@@ -94,10 +95,17 @@ def _active_excerpt(line: str, aliases: list[str]) -> str:
         if start < 0:
             continue
         end = start + len(alias)
-        after = line[end:end + 100]
+        after = line[end:end + 220]
         before = line[max(0, start - 100):start]
-        local = line[max(0, start - 120):end + 100]
+        local = line[max(0, start - 120):end + 220]
         direct = ACTIVE_VERBS.search(after)
+        bridge = after[:direct.start()] if direct else ""
+        borrowed_action = bool(
+            re.search(r"[;•.]", bridge)
+            or re.search(r"\b(?:Professor|Prof\.?|Dr|Mr|Mrs|Ms)\b", bridge, flags=re.I)
+            or re.search(r"\b[A-Z]\s+[A-Z]\s+[A-Z][a-z]+\b", bridge)
+            or re.search(r"\band\s+[A-Z]", bridge)
+        )
         passive = re.search(
             r"\b(?:presented|introduced|explained|reported|proposed|suggested|"
             r"commented|asked|clarified|discussed|tabled|raised|highlighted)\s+by\s+"
@@ -105,7 +113,10 @@ def _active_excerpt(line: str, aliases: list[str]) -> str:
             before,
             flags=re.I,
         )
-        if (direct and direct.start() <= 45 or passive) and not ATTENDANCE_ONLY.search(local):
+        if (
+            (direct and direct.start() <= 160 and not borrowed_action or passive)
+            and not ATTENDANCE_ONLY.search(local)
+        ):
             return line[max(0, start - 120):end + 240].strip()
     return ""
 
@@ -193,6 +204,7 @@ def analyze_person_documents(
     role_list = sorted(
         roles.values(), key=lambda value: (value["years"][-1] if value["years"] else "", value["role"])
     )
+    active_mentions.sort(key=lambda value: value.get("meeting_date", ""), reverse=True)
     return {
         "name": name,
         "aliases": aliases,

@@ -69,3 +69,56 @@ def test_person_document_analysis_separates_roles_participation_and_attendance(t
         }
     ]
     assert result["active_mentions"][0]["excerpt"].startswith("Professor Kar Yan Tam commented")
+
+
+def test_person_profile_active_mentions_are_newest_first(tmp_path):
+    manifest = {
+        "old": {
+            "doc_id": "old", "filename": "old.pdf", "role": "minutes",
+            "meeting_date": "1995-01-01", "relpath": "old.txt",
+        },
+        "new": {
+            "doc_id": "new", "filename": "new.pdf", "role": "minutes",
+            "meeting_date": "2025-01-01", "relpath": "new.txt",
+        },
+    }
+    (tmp_path / "old.txt").write_text("Professor Nancy Ip presented the old paper.", encoding="utf-8")
+    (tmp_path / "new.txt").write_text(
+        "| Professor Nancy Ip | Vice-President for Administration & Business |\n"
+        "Professor Nancy Ip, Vice-President for Administration & Business, reported the new paper.",
+        encoding="utf-8",
+    )
+
+    result = analyze_person_documents("Nancy Ip", manifest, tmp_path)
+
+    assert [item["meeting_date"] for item in result["active_mentions"]] == [
+        "2025-01-01", "1995-01-01"
+    ]
+    assert result["roles"][-1]["role"] == "Vice-President for Administration & Business"
+    assert result["roles"][-1]["years"] == ["2025"]
+
+
+def test_person_action_is_not_borrowed_from_another_subject_later_in_the_line(tmp_path):
+    manifest = {
+        "appointment": {
+            "doc_id": "appointment", "filename": "appointment.pdf", "role": "minutes",
+            "meeting_date": "2025-01-01", "relpath": "appointment.txt",
+        },
+        "group": {
+            "doc_id": "group", "filename": "group.pdf", "role": "minutes",
+            "meeting_date": "2002-01-01", "relpath": "group.txt",
+        },
+    }
+    (tmp_path / "appointment.txt").write_text(
+        "Prof Kar-Yan Tam as Acting Vice President; and Dr Eunice Cheng as Director. "
+        "The Chair expressed a vote of thanks.",
+        encoding="utf-8",
+    )
+    (tmp_path / "group.txt").write_text(
+        "A working group (K Y Tam, S Y Cheng, and Angelina Prof Tu Yee) was expected to report.",
+        encoding="utf-8",
+    )
+
+    result = analyze_person_documents("Kar Yan Tam", manifest, tmp_path)
+
+    assert result["active_doc_ids"] == []

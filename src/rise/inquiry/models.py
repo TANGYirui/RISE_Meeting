@@ -109,7 +109,7 @@ class Inquiry:
     possible_topics: list[AgendaTopic] = field(default_factory=list)
     rejected_topics: list[AgendaTopic] = field(default_factory=list)
     people: list[PersonSummary] = field(default_factory=list)
-    sort_order: str = "relevance"
+    sort_order: str = "chronological_desc"
     turns: list[ConversationTurn] = field(default_factory=list)
     response: dict[str, Any] = field(default_factory=dict)
     retrieval_audit: dict[str, Any] = field(default_factory=dict)
@@ -125,4 +125,3 @@ class Inquiry:
         payload["people"] = [PersonSummary.from_dict(value) for value in payload.get("people", [])]
         payload["turns"] = [ConversationTurn.from_dict(value) for value in payload.get("turns", [])]
         return cls(**payload)
-

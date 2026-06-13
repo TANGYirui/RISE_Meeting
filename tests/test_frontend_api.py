@@ -37,6 +37,9 @@ def test_api_serves_inquiry_static_frontend_and_original_pdf(tmp_path: Path):
     assert "RISE Meeting" in frontend
     assert 'id="chat-transcript"' in frontend
     assert 'id="chat-composer"' in frontend
+    frontend_js = client.get("/static/js/app.js").text
+    assert 'event.key === "Enter"' in frontend_js
+    assert "!event.shiftKey" in frontend_js
     assert client.get("/api/sources/item3/pdf").content == b"%PDF"
     inquiry_id = response.json()["inquiry_id"]
     summary = client.post(f"/api/inquiries/{inquiry_id}/continue-summaries")

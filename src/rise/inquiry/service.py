@@ -43,6 +43,21 @@ def _default_verifier(topic, question: str) -> dict:
     return {"status": "possible", "reason": "Retrieved by BM25 but requires semantic verification"}
 
 
+def _year_range(values) -> dict[str, str]:
+    years = sorted({str(value)[:4] for value in values if str(value)[:4].isdigit()})
+    return {"from": years[0], "to": years[-1]} if years else {"from": "", "to": ""}
+
+
+def _sort_topics(topics, sort_order: str) -> None:
+    if sort_order == "relevance":
+        topics.sort(
+            key=lambda topic: (topic.relevance_score, topic.meeting_date),
+            reverse=True,
+        )
+    else:
+        topics.sort(key=lambda topic: topic.meeting_date, reverse=True)
+
+
 class InquiryService:
     def __init__(
         self,
@@ -146,6 +161,8 @@ class InquiryService:
             )()
         else:
             verified = verify_topics(topics, question, self.verifier)
+        _sort_topics(verified.confirmed, "chronological_desc")
+        _sort_topics(verified.possible, "chronological_desc")
         people = aggregate_people(verified.confirmed)
         contract = select_response_contract(classified.intent, question)
         confirmed_payload = [topic.__dict__ | {"agenda_document": topic.agenda_document.__dict__ if topic.agenda_document else None} for topic in verified.confirmed]
@@ -170,6 +187,17 @@ class InquiryService:
                 "rise_investigation": investigation_audit,
             },
         )
+        response["year_coverage"] = {
+            "corpus": _year_range(
+                record.get("meeting_date", "")
+                for record in self.document_manifest.values()
+            ),
+            "candidates": _year_range(
+                self.document_manifest.get(doc_id, {}).get("meeting_date", "")
+                for doc_id in expanded
+            ),
+            "confirmed": _year_range(topic.meeting_date for topic in verified.confirmed),
+        }
         if person_profile is not None:
             roles = person_profile["roles"]
             if roles:
@@ -232,10 +260,8 @@ class InquiryService:
         if sort_order not in {"relevance", "chronological_desc"}:
             raise ValueError(sort_order)
         inquiry.sort_order = sort_order
-        if sort_order == "relevance":
-            inquiry.confirmed_topics.sort(key=lambda topic: topic.relevance_score, reverse=True)
-        else:
-            inquiry.confirmed_topics.sort(key=lambda topic: topic.meeting_date, reverse=True)
+        _sort_topics(inquiry.confirmed_topics, sort_order)
+        _sort_topics(inquiry.possible_topics, sort_order)
         self.store.save_inquiry(inquiry)
         return inquiry
 
