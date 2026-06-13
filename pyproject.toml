@@ -20,6 +20,9 @@ dependencies = [
     # via the Qwen/Qwen3-0.6B tokenizer (AutoTokenizer; no torch needed).
     "transformers>=4.46.0",
     "pymupdf",
+    "fastapi",
+    "uvicorn",
+    "httpx",
 ]
 
 [project.optional-dependencies]
