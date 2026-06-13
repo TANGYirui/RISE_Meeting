@@ -27,3 +27,26 @@ def test_every_response_has_complete_shared_fields():
     assert response["evidence"]
     assert response["actions"]
     assert response["retrieval_audit"]
+
+
+def test_rise_final_text_is_parsed_into_visible_answer_fields():
+    response = build_response(
+        contract="evidence_synthesis",
+        conclusion="Fallback count conclusion",
+        searched_scope="All records",
+        confirmed=[],
+        possible=[],
+        evidence=[],
+        actions=[],
+        audit={},
+        rise_final_text=(
+            "Explanation: The records identify Kar Yan Tam as an academic administrator.\n\n"
+            "Exact Answer: Dean and Chair Professor at HKUST.\n"
+            "Confidence: 95%"
+        ),
+    )
+
+    assert response["conclusion"] == "Dean and Chair Professor at HKUST."
+    assert response["answer_explanation"].startswith("The records identify")
+    assert response["answer_confidence"] == "95%"
+    assert response["result_summary"] == "Fallback count conclusion"

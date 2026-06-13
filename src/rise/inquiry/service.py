@@ -120,6 +120,7 @@ class InquiryService:
                 for evidence in topic.minutes_evidence
             ],
             actions=["Generate summaries", "Show possible results", "Inspect retrieval audit"],
+            rise_final_text=investigation_audit.get("final_text", ""),
             audit={
                 "queries": discovery.queries,
                 "candidate_doc_count": len(expanded),

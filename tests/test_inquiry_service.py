@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 
 from rise.inquiry.models import ConversationTurn
+from rise.inquiry.investigation import InvestigationResult
 from rise.inquiry.service import InquiryService
 from rise.inquiry.store import InquiryStore
 
@@ -65,3 +66,25 @@ def test_summary_batch_records_source_provenance(tmp_path: Path):
     assert topic.summary_source_files == ["Item1.pdf"]
     assert 3 <= len(re.findall(r"(?<=[.!?])\s+", topic.summary.strip())) + 1 <= 4
     assert remaining == 0
+
+
+def test_rise_answer_is_visible_without_replacing_verified_result_groups(tmp_path: Path):
+    service = InquiryService(
+        {}, {}, tmp_path, lambda query, depth: [], InquiryStore(tmp_path / "db.sqlite"),
+        investigator=lambda question: InvestigationResult(
+            set(),
+            {
+                "final_text": (
+                    "Explanation: The Agent found a role description in the corpus.\n"
+                    "Exact Answer: Kar Yan Tam is Dean and Chair Professor.\n"
+                    "Confidence: 91%"
+                )
+            },
+        ),
+    )
+
+    inquiry = service.create_inquiry("s", "Who is Kar Yan Tam?")
+
+    assert inquiry.response["conclusion"] == "Kar Yan Tam is Dean and Chair Professor."
+    assert inquiry.response["answer_explanation"]
+    assert inquiry.response["verified_count"] == 0

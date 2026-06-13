@@ -24,6 +24,9 @@ function render(data) {
   currentInquiry = data;
   const response = data.response;
   document.querySelector("#conclusion").textContent = response.conclusion;
+  document.querySelector("#explanation").textContent = response.answer_explanation || "";
+  document.querySelector("#confidence").textContent = response.answer_confidence ? `RISE confidence: ${response.answer_confidence}. Review the verified evidence below.` : "";
+  document.querySelector("#result-summary").textContent = response.result_summary;
   document.querySelector("#scope").textContent = response.searched_scope;
   document.querySelector("#confirmed-count").textContent = `${response.verified_count} confirmed`;
   document.querySelector("#possible-count").textContent = `${response.possible_count} possible`;

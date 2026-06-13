@@ -20,9 +20,15 @@
     <section id="status" aria-live="polite"></section>
     <section id="answer" hidden>
       <div class="answer-head">
-        <div><p class="eyebrow">Direct conclusion</p><h2 id="conclusion"></h2></div>
+        <div>
+          <p class="eyebrow">Direct answer</p>
+          <h2 id="conclusion"></h2>
+          <p id="explanation"></p>
+          <p id="confidence" class="confidence"></p>
+        </div>
         <select id="sort"><option value="relevance">Relevance</option><option value="chronological_desc">Newest first</option></select>
       </div>
+      <div class="result-summary"><p class="eyebrow">Verified retrieval summary</p><p id="result-summary"></p></div>
       <p id="scope"></p>
       <div class="counts"><strong id="confirmed-count"></strong><span id="possible-count"></span></div>
       <button id="summarize" type="button">Summarize next results</button>
