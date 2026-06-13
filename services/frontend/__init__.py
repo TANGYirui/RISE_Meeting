@@ -1,0 +1,2 @@
+"""RISE Meeting web frontend."""
+

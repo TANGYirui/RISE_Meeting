@@ -357,6 +357,63 @@ Important metrics:
 - `accuracy`: judged final-answer correctness.
 - `_traces`: qualitative evidence that the agent searched and read effectively.
 
+## Inquiry Frontend
+
+The inquiry application provides a reusable structured interface over the RISE
+meeting corpus. It supports the four priority question families and open-ended
+general inquiries:
+
+- discussion existence and complete topic inventories
+- retrieval of all relevant UAC agenda papers and official Minutes
+- people who discussed a topic
+- person-topic checks
+- comparisons, chronological histories, and evidence synthesis
+
+Every response uses a complete response contract with a direct conclusion,
+verified scope, Confirmed results, Possible results, grouped evidence,
+available actions, retrieval audit, and original-PDF links. General questions
+select the closest adaptive contract; they do not degrade to unsupported free
+text.
+
+The default workflow combines deep BM25 retrieval, exact full-document scans,
+the existing RISE bounded-workspace Agent, same-meeting expansion, Agenda Paper
+and Official Minutes pairing, and batched HKUST GenAI verification. RISE
+workspaces remain temporary. Inquiry state and the ten-turn conversation window
+are stored in the ignored SQLite path configured by `RISE_INQUIRY_DB`.
+
+Configure the application in `.env`:
+
+```env
+RISE_CORPUS_DIR=runs/uac_corpus/files
+RISE_BM25_DIR=runs/uac_bm25
+RISE_DOCUMENT_MANIFEST=runs/uac_corpus/document_manifest.json
+RISE_MEETING_MANIFEST=runs/uac_corpus/meeting_manifest.json
+RISE_FILENAME_MAP=runs/uac_corpus/filename_docid_map.json
+RISE_RAW_PDF_DIR=
+RISE_INQUIRY_DB=result/inquiry_app.sqlite
+RISE_INQUIRY_BATCH_SIZE=10
+RISE_INQUIRY_MEMORY_WINDOW=10
+RISE_INQUIRY_AGENT_MAX_CALLS=20
+RISE_INQUIRY_VERIFY_BATCH_SIZE=20
+```
+
+`RISE_RAW_PDF_DIR` is read only from the environment. The browser sends a
+`doc_id`; the server resolves the manifest filename under that configured root
+and never exposes an absolute path.
+
+Start the frontend on port `8502`:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn services.frontend.app.main:app `
+  --host 127.0.0.1 `
+  --port 8502
+```
+
+Open `http://127.0.0.1:8502`. Initial retrieval may take longer because the
+application discovers and verifies the complete result inventory before
+displaying the first batch. Summaries are generated only after the user clicks
+the summary control and retain their source document IDs and filenames.
+
 ## Tests
 
 Run the test suite:

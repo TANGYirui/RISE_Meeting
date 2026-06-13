@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RISE Meeting</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Accuracy-first UAC inquiry</p>
+      <h1>RISE Meeting</h1>
+      <p>Search complete agenda papers and official Minutes with evidence-linked answers.</p>
+    </header>
+    <form id="inquiry-form">
+      <textarea id="question" required placeholder="Ask about a topic, person, history, or comparison..."></textarea>
+      <button type="submit">Investigate</button>
+    </form>
+    <section id="status" aria-live="polite"></section>
+    <section id="answer" hidden>
+      <div class="answer-head">
+        <div><p class="eyebrow">Direct conclusion</p><h2 id="conclusion"></h2></div>
+        <select id="sort"><option value="relevance">Relevance</option><option value="chronological_desc">Newest first</option></select>
+      </div>
+      <p id="scope"></p>
+      <div class="counts"><strong id="confirmed-count"></strong><span id="possible-count"></span></div>
+      <button id="summarize" type="button">Summarize next results</button>
+      <div id="confirmed"></div>
+      <details><summary>Possible results</summary><div id="possible"></div></details>
+      <details><summary>Retrieval audit</summary><pre id="audit"></pre></details>
+    </section>
+  </main>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

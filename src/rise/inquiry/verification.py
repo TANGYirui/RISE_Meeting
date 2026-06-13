@@ -20,9 +20,11 @@ def verify_topics(
     verifier: Callable[[AgendaTopic, str], dict],
 ) -> VerificationResult:
     result = VerificationResult()
+    topics = list(topics)
+    batch_decisions = verifier.verify_many(topics, question) if hasattr(verifier, "verify_many") else None
     for topic in topics:
         try:
-            decision = verifier(topic, question)
+            decision = batch_decisions.get(topic.topic_id, {}) if batch_decisions is not None else verifier(topic, question)
             status = decision.get("status", "possible")
             reason = decision.get("reason", "")
         except Exception as exc:
@@ -34,4 +36,3 @@ def verify_topics(
         topic.verification_reason = reason
         getattr(result, status).append(topic)
     return result
-
