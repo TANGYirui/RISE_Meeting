@@ -37,3 +37,19 @@ def test_unpaired_minutes_section_becomes_minutes_only_topic():
     topics = assemble_topics({"minutes"}, manifest, {"minutes": "Item 9 New matter\nA decision was recorded."})
     assert topics[0].topic_kind == "minutes_only"
     assert topics[0].item_number == 9
+
+
+def test_minutes_candidate_pairs_matching_agenda_even_when_agenda_was_not_retrieved():
+    manifest = {
+        "item9": {
+            "doc_id": "item9", "filename": "Item9.pdf", "role": "agenda_item",
+            "meeting_date": "2024-05-09", "item_number": 9, "title": "New matter",
+        },
+        "minutes": {
+            "doc_id": "minutes", "filename": "Minutes.pdf", "role": "minutes",
+            "meeting_date": "2024-05-09", "item_number": None, "title": "",
+        },
+    }
+    topics = assemble_topics({"minutes"}, manifest, {"minutes": "Item 9 New matter\nDecision recorded."})
+    assert topics[0].topic_kind == "agenda"
+    assert topics[0].agenda_document.doc_id == "item9"

@@ -414,6 +414,15 @@ application discovers and verifies the complete result inventory before
 displaying the first batch. Summaries are generated only after the user clicks
 the summary control and retain their source document IDs and filenames.
 
+Evaluate saved Inquiry JSON records against an ignored local gold JSONL file:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\evaluate_inquiries.py `
+  --gold data\local\inquiry_gold_queries.jsonl `
+  --inquiries result\saved_inquiries.json `
+  --out result\inquiry_evaluation.json
+```
+
 ## Tests
 
 Run the test suite:

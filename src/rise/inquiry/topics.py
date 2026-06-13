@@ -74,6 +74,20 @@ def assemble_topics(
                     (_source(record), evidence, title)
                 )
 
+    for doc_id, record in document_manifest.items():
+        if record.get("role") != "agenda_item" or record.get("item_number") is None:
+            continue
+        key = (record.get("meeting_date", ""), int(record["item_number"]))
+        if key in minutes_by_key and key not in agenda_by_key:
+            agenda_by_key[key] = AgendaTopic(
+                topic_id=f"{key[0]}:item{key[1]}",
+                title=record.get("title") or f"Item {key[1]}",
+                meeting_date=key[0],
+                item_number=key[1],
+                agenda_document=_source(record),
+                candidate_sources=[doc_id, "same_meeting_pairing"],
+            )
+
     topics: list[AgendaTopic] = []
     for key in sorted(set(agenda_by_key) | set(minutes_by_key)):
         topic = agenda_by_key.get(key)
@@ -95,4 +109,3 @@ def assemble_topics(
             topic.candidate_sources.append(source.doc_id)
         topics.append(topic)
     return topics
-

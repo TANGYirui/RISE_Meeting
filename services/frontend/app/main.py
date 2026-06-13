@@ -43,6 +43,15 @@ def create_app(
     def health():
         return {"status": "ok" if app.state.service is not None else "degraded"}
 
+    @app.get("/api/stats")
+    def stats():
+        service = require_service()
+        return {
+            "documents": len(service.document_manifest),
+            "meetings": len(service.meeting_manifest),
+            "memory_window": service.store.memory_window,
+        }
+
     @app.post("/api/inquiries")
     def create_inquiry(request: InquiryRequest):
         return require_service().create_inquiry(request.session_id, request.question).to_dict()
