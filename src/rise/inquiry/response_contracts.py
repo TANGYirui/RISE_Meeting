@@ -11,6 +11,7 @@ PRIORITY_CONTRACTS = {
     "people_by_topic": "people_summary",
     "person_topic_check": "person_topic_verdict",
     "person_profile": "person_profile",
+    "person_topics": "person_topics",
 }
 
 
@@ -39,13 +40,15 @@ def build_response(
 ) -> dict[str, Any]:
     """Build the mandatory complete envelope for every inquiry response."""
     rise_answer = parse_rise_final_text(rise_final_text)
+    retrieval_audit = dict(audit)
+    retrieval_audit["rise_answer"] = rise_answer
     return {
         "contract": contract,
-        "conclusion": rise_answer["exact_answer"] or conclusion,
+        "conclusion": conclusion,
         "result_summary": conclusion,
-        "answer_explanation": rise_answer["explanation"],
-        "answer_confidence": rise_answer["confidence"],
-        "answer_source": "rise_investigation" if rise_answer["exact_answer"] else "verified_results",
+        "answer_explanation": "",
+        "answer_confidence": "",
+        "answer_source": "verified_results",
         "verified_count": len(confirmed),
         "possible_count": len(possible),
         "searched_scope": searched_scope,
@@ -53,7 +56,7 @@ def build_response(
         "possible_results": list(possible),
         "evidence": list(evidence),
         "actions": list(actions),
-        "retrieval_audit": dict(audit),
+        "retrieval_audit": retrieval_audit,
     }
 
 

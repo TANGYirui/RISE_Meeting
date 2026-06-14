@@ -23,14 +23,22 @@ ATTENDANCE_ONLY = re.compile(
     re.I,
 )
 ROLE_PATTERN = re.compile(
-    r"\b(?:Associate\s+Dean(?:,\s*.*?)?|Dean(?:,\s*.*?)?|"
-    r"Chair\s+Professor(?:,\s*.*?)?|Senate\s+Representative|"
+    r"\b(?:Associate\s+Dean(?:,\s*[^,|;\n.]{1,80})?|"
+    r"Dean(?:,\s*[^,|;\n.]{1,80})?|"
+    r"Chair\s+Professor(?:,\s*[^,|;\n.]{1,80})?|Senate\s+Representative|"
     r"AVP-[A-Z-]+|(?:Acting\s+)?(?:Associate\s+)?Vice-President"
-    r"(?:\s+for\s+[^,|;\n.]+|,\s*[^,|;\n.]+)?)"
+    r"(?:\s+for\s+[^,|;\n.]{1,80}|,\s*[^,|;\n.]{1,80})?|"
+    r"President(?:\s+\(Designate\))?(?:,\s*Chair)?|Provost|"
+    r"Director(?:,\s*[^,|;\n.]{1,80})?)"
     r"(?=\s+(?:Professor|Prof\.?|Dr|Mr|Mrs|Ms)\b|[,|;\n.]|$)",
     re.I,
 )
 PROFILE_ROLES = {"agenda_item", "minutes"}
+ROLE_KEYWORDS = re.compile(
+    r"\b(?:President|Provost|Vice-President|VP[-A-Z]*|VPRD|VPAB|Dean|"
+    r"Chair|Director|Representative|Head|Officer|Professor)\b",
+    re.I,
+)
 
 
 def normalize_person(name: str) -> str:
@@ -121,30 +129,62 @@ def _active_excerpt(line: str, aliases: list[str]) -> str:
     return ""
 
 
-def _nearby_role(line: str, aliases: list[str]) -> str:
-    folded = line.casefold()
-    alias_positions = [folded.find(alias.casefold()) for alias in aliases]
-    alias_positions = [position for position in alias_positions if position >= 0]
-    candidates = list(ROLE_PATTERN.finditer(line))
-    if not alias_positions or not candidates:
-        return ""
-    match = min(
-        candidates,
-        key=lambda candidate: min(
-            abs(candidate.start() - position) for position in alias_positions
-        ),
-    )
-    distance = min(
-        min(abs(match.start() - position), abs(match.end() - position))
-        for position in alias_positions
-    )
-    if distance > 100:
-        return ""
-    role = re.sub(r"\s+", " ", match.group(0)).strip(" ,|")
+def _clean_role(role: str) -> str:
+    role = re.sub(r"\s+", " ", role).strip(" ,|")
     role = re.sub(r"\s*\|\s*$", "", role).strip()
+    role = re.sub(r"\s+effective\s+from\b.*$", "", role, flags=re.I).strip(" ,")
     if role.endswith(")") and "(" not in role:
         role = role[:-1].rstrip()
     return re.sub(r",\s*", ", ", role)
+
+
+def _valid_role(role: str) -> bool:
+    return bool(
+        role
+        and len(role) <= 120
+        and ROLE_KEYWORDS.search(role)
+        and not re.search(r"\b(?:Professor|Prof\.?|Dr|Mr|Mrs|Ms)\b", role, flags=re.I)
+        and not re.search(r"\b(?:reported|presented|introduced|discussed|expressed)\b", role, flags=re.I)
+        and not role.lower().startswith("then ")
+        and "representing " not in role.lower()
+        and "summary for " not in role.lower()
+    )
+
+
+def _subject_bound_roles(line: str, aliases: list[str]) -> list[str]:
+    """Extract roles attached to the named subject, never a nearby other person."""
+    folded = line.casefold()
+    roles: list[str] = []
+
+    if "|" in line:
+        cells = [cell.strip() for cell in line.split("|")]
+        for index, cell in enumerate(cells):
+            if any(alias.casefold() in cell.casefold() for alias in aliases):
+                for candidate in cells[index + 1:index + 2]:
+                    role = _clean_role(candidate)
+                    if _valid_role(role):
+                        roles.append(role)
+
+    for alias in aliases:
+        position = folded.find(alias.casefold())
+        if position < 0:
+            continue
+        escaped = re.escape(line[position:position + len(alias)])
+        honorific_name = rf"(?:Professor|Prof\.?|Dr|Mr|Mrs|Ms)?\s*{escaped}"
+        patterns = [
+            rf"{honorific_name}\s+has\s+been\s+appointed\s+as\s+(.+?)(?=\s+effective\b|[.;]|$)",
+            rf"{honorific_name}\s*,\s*(.+?)(?=,\s*(?:reported|presented|briefed|"
+            rf"supplemented|asked|commented|noted|expressed)\b|[.;]|$)",
+            rf"({ROLE_PATTERN.pattern})\s+(?:Professor|Prof\.?|Dr|Mr|Mrs|Ms)\s+{escaped}",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, line, flags=re.I)
+            if not match:
+                continue
+            role = _clean_role(match.group(1))
+            if _valid_role(role):
+                roles.append(role)
+    return list(dict.fromkeys(role for role in roles if role))
 
 
 def analyze_person_documents(
@@ -159,6 +199,7 @@ def analyze_person_documents(
     attendance_only_doc_ids: list[str] = []
     mention_doc_ids: list[str] = []
     roles: dict[str, dict] = {}
+    role_facts: list[dict] = []
 
     for doc_id, record in document_manifest.items():
         if record.get("role") not in PROFILE_ROLES:
@@ -173,8 +214,7 @@ def analyze_person_documents(
         mention_doc_ids.append(doc_id)
         is_active = False
         for line in lines:
-            role = _nearby_role(line, aliases)
-            if role:
+            for role in _subject_bound_roles(line, aliases):
                 role_key = role.casefold()
                 entry = roles.setdefault(role_key, {"role": role, "years": [], "doc_ids": []})
                 year = str(record.get("meeting_date", ""))[:4]
@@ -182,6 +222,14 @@ def analyze_person_documents(
                     entry["years"].append(year)
                 if doc_id not in entry["doc_ids"]:
                     entry["doc_ids"].append(doc_id)
+                role_facts.append(
+                    {
+                        "role": role,
+                        "meeting_date": record.get("meeting_date", ""),
+                        "doc_id": doc_id,
+                        "filename": record.get("filename", ""),
+                    }
+                )
             active_excerpt = _active_excerpt(line, aliases)
             if active_excerpt:
                 is_active = True
@@ -205,6 +253,10 @@ def analyze_person_documents(
         roles.values(), key=lambda value: (value["years"][-1] if value["years"] else "", value["role"])
     )
     active_mentions.sort(key=lambda value: value.get("meeting_date", ""), reverse=True)
+    role_facts.sort(
+        key=lambda value: (value.get("meeting_date", ""), len(value.get("role", ""))),
+        reverse=True,
+    )
     return {
         "name": name,
         "aliases": aliases,
@@ -214,6 +266,7 @@ def analyze_person_documents(
         "attendance_only_doc_ids": sorted(attendance_only_doc_ids),
         "active_mentions": active_mentions,
         "roles": role_list,
+        "current_role": role_facts[0] if role_facts else None,
     }
 
 
@@ -290,4 +343,30 @@ def aggregate_people(topics: Iterable[AgendaTopic]) -> list[PersonSummary]:
             summary.evidence.extend(topic.minutes_evidence)
     for key, summary in grouped.items():
         summary.aliases = sorted(aliases[key])
+    return sorted(grouped.values(), key=lambda value: value.name.casefold())
+
+
+PERSON_ACTION = re.compile(
+    r"\b(?:Professor|Prof\.?|Dr|Mr|Mrs|Ms)\s+"
+    r"([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){1,3})"
+    r"(?:,\s*[^.;]{0,120})?\s+"
+    r"(?:asked|briefed|commented|discussed|explained|expressed|introduced|"
+    r"noted|presented|proposed|reported|supplemented|tabled)\b",
+    re.I,
+)
+
+
+def extract_active_people(topics: Iterable[AgendaTopic]) -> list[PersonSummary]:
+    """Extract active speakers from verified evidence using subject-bound actions."""
+    grouped: dict[str, PersonSummary] = {}
+    for topic in topics:
+        passages = [evidence.excerpt for evidence in topic.minutes_evidence]
+        for passage in passages:
+            for match in PERSON_ACTION.finditer(passage):
+                name = normalize_person(match.group(1))
+                key = name.casefold()
+                summary = grouped.setdefault(key, PersonSummary(name))
+                if topic.topic_id not in summary.topic_ids:
+                    summary.topic_ids.append(topic.topic_id)
+                summary.evidence.extend(topic.minutes_evidence)
     return sorted(grouped.values(), key=lambda value: value.name.casefold())

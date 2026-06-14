@@ -68,7 +68,7 @@ def test_summary_batch_records_source_provenance(tmp_path: Path):
     assert remaining == 0
 
 
-def test_rise_answer_is_visible_without_replacing_verified_result_groups(tmp_path: Path):
+def test_rise_answer_is_audit_only_without_replacing_verified_result_groups(tmp_path: Path):
     service = InquiryService(
         {}, {}, tmp_path, lambda query, depth: [], InquiryStore(tmp_path / "db.sqlite"),
         investigator=lambda question: InvestigationResult(
@@ -85,8 +85,11 @@ def test_rise_answer_is_visible_without_replacing_verified_result_groups(tmp_pat
 
     inquiry = service.create_inquiry("s", "Who is Kar Yan Tam?")
 
-    assert inquiry.response["conclusion"] == "Kar Yan Tam is Dean and Chair Professor."
-    assert inquiry.response["answer_explanation"]
+    assert inquiry.response["conclusion"].startswith("No verified current role for Kar Yan Tam")
+    assert inquiry.response["answer_explanation"].startswith("Found 0 documents")
+    assert inquiry.response["retrieval_audit"]["rise_answer"]["exact_answer"] == (
+        "Kar Yan Tam is Dean and Chair Professor."
+    )
     assert inquiry.response["verified_count"] == 0
 
 
@@ -187,3 +190,56 @@ def test_relevance_sort_breaks_equal_scores_by_newest_date(tmp_path: Path):
     updated = service.set_sort(inquiry.inquiry_id, "relevance")
 
     assert [topic.topic_id for topic in updated.confirmed_topics] == ["new", "old"]
+
+
+def test_people_by_topic_returns_people_from_verified_evidence_not_agent_text(tmp_path: Path):
+    manifest = {
+        "minutes": {
+            "doc_id": "minutes", "filename": "Minutes.pdf", "role": "minutes",
+            "meeting_date": "2025-01-01", "relpath": "minutes.txt",
+        }
+    }
+    (tmp_path / "minutes.txt").write_text(
+        "Item 2 Tuition Fee Adjustment\nProf Ada Wong presented the proposal.",
+        encoding="utf-8",
+    )
+    service = InquiryService(
+        manifest, {}, tmp_path, lambda query, depth: [("minutes", 2.0)],
+        InquiryStore(tmp_path / "db.sqlite"),
+        verifier=lambda topic, question: {"status": "confirmed", "reason": "direct evidence"},
+        investigator=lambda question: InvestigationResult(
+            set(), {"final_text": "Exact Answer: Technical system error\nConfidence: 0%"}
+        ),
+    )
+
+    inquiry = service.create_inquiry("s", "Who discussed tuition fee adjustment?")
+
+    assert inquiry.topic == "tuition fee adjustment"
+    assert [person.name for person in inquiry.people] == ["Ada Wong"]
+    assert inquiry.response["conclusion"].startswith("Found 1 person")
+    assert "Technical system error" not in inquiry.response["conclusion"]
+
+
+def test_service_uses_bounded_memory_for_pronoun_follow_up_and_audits_it(tmp_path: Path):
+    manifest = {
+        "minutes": {
+            "doc_id": "minutes", "filename": "Minutes.pdf", "role": "minutes",
+            "meeting_date": "2025-01-01", "relpath": "minutes.txt",
+        }
+    }
+    (tmp_path / "minutes.txt").write_text(
+        "Item 2 Policy\nProfessor Nancy Ip presented the policy.",
+        encoding="utf-8",
+    )
+    service = InquiryService(
+        manifest, {}, tmp_path, lambda query, depth: [("minutes", 2.0)],
+        InquiryStore(tmp_path / "db.sqlite", memory_window=10),
+        verifier=lambda topic, question: {"status": "confirmed", "reason": "direct evidence"},
+    )
+    service.create_inquiry("s", "Who is Nancy Ip?")
+
+    follow_up = service.create_inquiry("s", "What topics did she discuss?")
+
+    assert follow_up.resolved_question == "What topics did Nancy Ip discuss?"
+    assert follow_up.retrieval_audit["conversation_memory"]["used"] is True
+    assert follow_up.retrieval_audit["conversation_memory"]["window_size"] <= 10

@@ -29,7 +29,7 @@ def test_every_response_has_complete_shared_fields():
     assert response["retrieval_audit"]
 
 
-def test_rise_final_text_is_parsed_into_visible_answer_fields():
+def test_rise_final_text_is_audit_only_and_never_overrides_verified_answer():
     response = build_response(
         contract="evidence_synthesis",
         conclusion="Fallback count conclusion",
@@ -46,7 +46,9 @@ def test_rise_final_text_is_parsed_into_visible_answer_fields():
         ),
     )
 
-    assert response["conclusion"] == "Dean and Chair Professor at HKUST."
-    assert response["answer_explanation"].startswith("The records identify")
-    assert response["answer_confidence"] == "95%"
+    assert response["conclusion"] == "Fallback count conclusion"
+    assert response["answer_explanation"] == ""
+    assert response["answer_confidence"] == ""
+    assert response["answer_source"] == "verified_results"
+    assert response["retrieval_audit"]["rise_answer"]["exact_answer"] == "Dean and Chair Professor at HKUST."
     assert response["result_summary"] == "Fallback count conclusion"

@@ -3,6 +3,7 @@ from rise.inquiry.people import (
     aggregate_people,
     analyze_person_documents,
     build_person_aliases,
+    extract_active_people,
     extract_person_name,
 )
 
@@ -122,3 +123,78 @@ def test_person_action_is_not_borrowed_from_another_subject_later_in_the_line(tm
     result = analyze_person_documents("Kar Yan Tam", manifest, tmp_path)
 
     assert result["active_doc_ids"] == []
+
+
+def test_generic_role_extraction_uses_subject_bound_document_evidence(tmp_path):
+    manifest = {
+        "table": {
+            "doc_id": "table", "filename": "table.pdf", "role": "minutes",
+            "meeting_date": "2025-01-01", "relpath": "table.txt",
+        },
+        "appointment": {
+            "doc_id": "appointment", "filename": "appointment.pdf", "role": "agenda_item",
+            "meeting_date": "2024-01-01", "relpath": "appointment.txt",
+        },
+    }
+    (tmp_path / "table.txt").write_text(
+        "| Present: | Prof Ada Wong | President, Chair |\n"
+        "| Present: | Prof Other Person | Vice-President for Research |",
+        encoding="utf-8",
+    )
+    (tmp_path / "appointment.txt").write_text(
+        "Prof Ada Wong has been appointed as President effective from 1 July 2024.",
+        encoding="utf-8",
+    )
+
+    result = analyze_person_documents("Ada Wong", manifest, tmp_path)
+
+    assert [(role["role"], role["years"]) for role in result["roles"]] == [
+        ("President", ["2024"]),
+        ("President, Chair", ["2025"]),
+    ]
+    assert result["current_role"] == {
+        "role": "President, Chair",
+        "meeting_date": "2025-01-01",
+        "doc_id": "table",
+        "filename": "table.pdf",
+    }
+
+
+def test_garbage_cross_person_roles_are_removed_from_generic_timeline(tmp_path):
+    manifest = {
+        "minutes": {
+            "doc_id": "minutes", "filename": "minutes.pdf", "role": "minutes",
+            "meeting_date": "2025-01-01", "relpath": "minutes.txt",
+        }
+    }
+    (tmp_path / "minutes.txt").write_text(
+        "Prof Ada Wong, Vice-President for Research Professor Other Person, Dean, School of Science.\n"
+        "| Present: | Prof Ada Wong | President, Chair |",
+        encoding="utf-8",
+    )
+
+    result = analyze_person_documents("Ada Wong", manifest, tmp_path)
+
+    assert [role["role"] for role in result["roles"]] == ["President, Chair"]
+
+
+def test_active_people_are_extracted_generically_from_verified_topic_evidence():
+    topics = [
+        AgendaTopic(
+            "fees", "Tuition fee adjustment", "2025-01-01",
+            minutes_evidence=[
+                MinutesEvidence(
+                    "minutes", "minutes.pdf",
+                    "Prof Ada Wong presented the tuition fee proposal. "
+                    "Prof Ben Lee asked whether the adjustment was necessary."
+                )
+            ],
+        )
+    ]
+
+    people = extract_active_people(topics)
+
+    assert [(person.name, person.topic_ids) for person in people] == [
+        ("Ada Wong", ["fees"]),
+        ("Ben Lee", ["fees"]),
+    ]

@@ -38,17 +38,26 @@ function personProfile(profile) {
   const active = (profile.active_mentions || []).slice(0, 10).map(item =>
     `<article class="evidence-line"><strong>${escapeHtml(item.meeting_date)}</strong><p>${escapeHtml(item.excerpt)}</p><a href="/api/sources/${encodeURIComponent(item.doc_id)}/pdf" target="_blank" rel="noopener">${escapeHtml(item.filename)}</a></article>`
   ).join("");
+  const currentRole = profile.current_role
+    ? `<p><strong>Current verified role:</strong> ${escapeHtml(profile.current_role.role)} <span class="muted">(${escapeHtml(profile.current_role.meeting_date)}, ${sourceLink(profile.current_role)})</span></p>`
+    : `<p>No verified current role was identified in the indexed corpus.</p>`;
   return `<section class="profile-panel">
+    ${currentRole}
     <div class="metric-row">
       <div><strong>${profile.mention_doc_count}</strong><span>documents mentioning this person</span></div>
       <div><strong>${profile.active_doc_count}</strong><span>active participation records</span></div>
       <div><strong>${profile.attendance_only_doc_count}</strong><span>role, attendance, or absence records</span></div>
     </div>
-    <h3>Role timeline</h3>
-    <ol class="role-timeline">${roles || "<li>No role title was identified.</li>"}</ol>
-    <h3>Active participation evidence</h3>
-    <div>${active || "<p>No explicit active participation was identified.</p>"}</div>
+    <details><summary>Role history (${(profile.roles || []).length})</summary><ol class="role-timeline">${roles || "<li>No role title was identified.</li>"}</ol></details>
+    <details><summary>Active participation evidence (${profile.active_doc_count})</summary><div>${active || "<p>No explicit active participation was identified.</p>"}</div></details>
   </section>`;
+}
+
+function peopleSummary(people) {
+  if (!people?.length) return "";
+  return `<details class="people-results" open><summary>People identified in confirmed evidence (${people.length})</summary>
+    <div>${people.map(person => `<article class="person-result"><h3>${escapeHtml(person.name)}</h3><p>${person.topic_ids.length} confirmed topic(s)</p></article>`).join("")}</div>
+  </details>`;
 }
 
 function assistantMarkup(data) {
@@ -56,12 +65,17 @@ function assistantMarkup(data) {
   const coverage = response.year_coverage || {};
   const corpusCoverage = coverage.corpus?.from ? `${coverage.corpus.from}–${coverage.corpus.to}` : "Unavailable";
   const confirmedCoverage = coverage.confirmed?.from ? `${coverage.confirmed.from}–${coverage.confirmed.to}` : "No confirmed years";
+  const pendingSummaries = data.confirmed_topics.filter(topic => topic.summary_status !== "completed").length;
+  const summaryAction = pendingSummaries
+    ? `<button class="summarize" type="button">Summarize next ${Math.min(10, pendingSummaries)} results</button>`
+    : "";
   return `<article class="message assistant-message" data-inquiry-id="${escapeHtml(data.inquiry_id)}">
     <p class="eyebrow">Direct answer</p>
     <h2>${escapeHtml(response.conclusion)}</h2>
     ${response.answer_explanation ? `<p>${escapeHtml(response.answer_explanation)}</p>` : ""}
     ${response.answer_confidence ? `<p class="confidence">RISE confidence: ${escapeHtml(response.answer_confidence)}. Review the verified evidence below.</p>` : ""}
     ${personProfile(response.person_profile)}
+    ${peopleSummary(data.people)}
     <section class="retrieval-summary">
       <p class="eyebrow">Verified retrieval summary</p>
       <p>${escapeHtml(response.result_summary)}</p>
@@ -73,10 +87,10 @@ function assistantMarkup(data) {
           <option value="relevance" ${data.sort_order === "relevance" ? "selected" : ""}>Relevance</option>
           <option value="chronological_desc" ${data.sort_order === "chronological_desc" ? "selected" : ""}>Newest first</option>
         </select>
-        <button class="summarize" type="button">Summarize next results</button>
+        ${summaryAction}
       </div>
     </section>
-    <div class="confirmed-results">${data.confirmed_topics.map(topicCard).join("")}</div>
+    <details class="supporting-results"><summary>Supporting files (${response.verified_count})</summary><div class="confirmed-results">${data.confirmed_topics.map(topicCard).join("")}</div></details>
     <details><summary>Possible results (${response.possible_count})</summary><div>${data.possible_topics.map(topicCard).join("")}</div></details>
     <details><summary>Retrieval audit</summary><pre>${escapeHtml(JSON.stringify(response.retrieval_audit, null, 2))}</pre></details>
   </article>`;

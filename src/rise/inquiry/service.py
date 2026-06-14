@@ -13,7 +13,7 @@ from rise.retrieval import load_index, retrieve
 from rise.uac_workspace import related_doc_ids
 
 from .discovery import discover_candidates
-from .intents import classify_inquiry, extract_topic
+from .intents import classify_inquiry, extract_topic, resolve_contextual_question
 from .investigation import RiseInvestigator
 from .llm import HKUSTBatchVerifier
 from .models import ConversationTurn, Inquiry
@@ -23,6 +23,7 @@ from .people import (
     build_person_aliases,
     ensure_active_person_topics,
     extract_person_name,
+    extract_active_people,
     topic_has_active_person_evidence,
 )
 from .response_contracts import build_response, select_response_contract
@@ -92,10 +93,23 @@ class InquiryService:
         return texts
 
     def create_inquiry(self, session_id: str, question: str) -> Inquiry:
-        classified = classify_inquiry(question)
-        person_name = extract_person_name(question) if classified.intent == "person_profile" else ""
+        recent_turns = self.store.get_turns(session_id)
+        context = resolve_contextual_question(question, recent_turns)
+        resolved_question = context.resolved_question
+        classified = classify_inquiry(resolved_question)
+        person_name = (
+            extract_person_name(resolved_question)
+            if classified.intent in {"person_profile", "person_topics"}
+            else ""
+        )
+        if classified.intent == "person_topics" and not person_name:
+            match = re.search(
+                r"(?i)(?:what\s+topics?\s+did|topics?\s+about)\s+(.+?)(?:\s+discuss)?[?.!]*$",
+                resolved_question,
+            )
+            person_name = match.group(1).strip() if match else ""
         aliases = build_person_aliases(person_name)
-        topic_query = extract_topic(question, classified.intent)
+        topic_query = extract_topic(resolved_question, classified.intent)
         queries = aliases or list(
             dict.fromkeys([question, topic_query] if topic_query else [question])
         )
@@ -116,7 +130,7 @@ class InquiryService:
             expanded = set(person_profile["active_doc_ids"])
         investigation_audit = {}
         if self.investigator is not None:
-            investigation = self.investigator(question)
+            investigation = self.investigator(resolved_question)
             expanded.update(investigation.doc_ids)
             investigation_audit = investigation.audit
         if not person_name:
@@ -160,11 +174,15 @@ class InquiryService:
                 {"confirmed": topics, "possible": [], "rejected": []},
             )()
         else:
-            verified = verify_topics(topics, question, self.verifier)
+            verified = verify_topics(topics, resolved_question, self.verifier)
         _sort_topics(verified.confirmed, "chronological_desc")
         _sort_topics(verified.possible, "chronological_desc")
-        people = aggregate_people(verified.confirmed)
-        contract = select_response_contract(classified.intent, question)
+        people = (
+            extract_active_people(verified.confirmed)
+            if classified.intent == "people_by_topic"
+            else aggregate_people(verified.confirmed)
+        )
+        contract = select_response_contract(classified.intent, resolved_question)
         confirmed_payload = [topic.__dict__ | {"agenda_document": topic.agenda_document.__dict__ if topic.agenda_document else None} for topic in verified.confirmed]
         possible_payload = [topic.__dict__ | {"agenda_document": topic.agenda_document.__dict__ if topic.agenda_document else None} for topic in verified.possible]
         response = build_response(
@@ -185,6 +203,12 @@ class InquiryService:
                 "candidate_doc_count": len(expanded),
                 "candidate_sources": discovery.sources,
                 "rise_investigation": investigation_audit,
+                "conversation_memory": {
+                    "used": context.used_memory,
+                    "subject": context.subject,
+                    "window_size": len(recent_turns),
+                    "resolved_question": resolved_question,
+                },
             },
         )
         response["year_coverage"] = {
@@ -199,9 +223,18 @@ class InquiryService:
             "confirmed": _year_range(topic.meeting_date for topic in verified.confirmed),
         }
         if person_profile is not None:
-            roles = person_profile["roles"]
-            if roles:
-                response["conclusion"] = f"{person_name}: {roles[-1]['role']}."
+            current_role = person_profile["current_role"]
+            if classified.intent == "person_topics":
+                response["conclusion"] = (
+                    f"Found {len(verified.confirmed)} confirmed topics with active participation "
+                    f"by {person_name}."
+                )
+            elif current_role:
+                response["conclusion"] = f"{person_name}: {current_role['role']}."
+            else:
+                response["conclusion"] = (
+                    f"No verified current role for {person_name} was identified in the indexed corpus."
+                )
             response["answer_explanation"] = (
                 f"Found {person_profile['mention_doc_count']} documents mentioning {person_name}; "
                 f"{len(person_profile['active_doc_ids'])} contain active participation."
@@ -218,11 +251,17 @@ class InquiryService:
                 "active_doc_count": len(person_profile["active_doc_ids"]),
                 "attendance_only_doc_count": len(person_profile["attendance_only_doc_ids"]),
             }
+        elif classified.intent == "people_by_topic":
+            people_label = "person" if len(people) == 1 else "people"
+            response["conclusion"] = (
+                f"Found {len(people)} {people_label} with explicit active participation "
+                f"in confirmed evidence about {topic_query}."
+            )
         inquiry = Inquiry(
             inquiry_id=uuid.uuid4().hex,
             session_id=session_id,
             original_question=question,
-            resolved_question=question,
+            resolved_question=resolved_question,
             intent=classified.intent,
             is_priority_intent=classified.is_priority_intent,
             person=person_name,
